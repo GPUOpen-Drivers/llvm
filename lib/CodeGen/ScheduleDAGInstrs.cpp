@@ -388,8 +388,19 @@ void ScheduleDAGInstrs::addVRegDefDeps(SUnit *SU, unsigned OperIdx) {
   }
 
   if (MO.isDead()) {
-    assert(CurrentVRegUses.find(Reg) == CurrentVRegUses.end() &&
-           "Dead defs should have no uses");
+    if (TrackLaneMasks) {
+      // Iterate over uses and make sure they are for different lanes
+      for (VReg2SUnitOperIdxMultiMap::iterator I = CurrentVRegUses.find(Reg),
+           E = CurrentVRegUses.end(); I != E; ++I) {
+        LaneBitmask LaneMask = I->LaneMask;
+        // Ignore uses of other lanes.
+        if ((LaneMask & KillLaneMask).none())
+          continue;
+        llvm_unreachable("Dead defs should have no uses (subregister)");
+      }
+    } else
+      assert(CurrentVRegUses.find(Reg) == CurrentVRegUses.end() &&
+             "Dead defs should have no uses");
   } else {
     // Add data dependence to all uses we found so far.
     const TargetSubtargetInfo &ST = MF.getSubtarget();
