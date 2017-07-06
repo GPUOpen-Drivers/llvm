@@ -2129,7 +2129,7 @@ class JoinVals {
   LaneBitmask computeWriteLanes(const MachineInstr *DefMI, bool &Redef) const;
 
   /// Find the ultimate value that VNI was copied from.
-  std::pair<const VNInfo*,unsigned> followCopyChain(const VNInfo *VNI) const;
+  std::pair<const VNInfo*,unsigned> followCopyChain(const VNInfo *VNI, bool &SubRangeDead) const;
 
   bool valuesIdentical(VNInfo *Val0, VNInfo *Val1, const JoinVals &Other) const;
 
@@ -2248,8 +2248,9 @@ LaneBitmask JoinVals::computeWriteLanes(const MachineInstr *DefMI, bool &Redef)
 }
 
 std::pair<const VNInfo*, unsigned> JoinVals::followCopyChain(
-    const VNInfo *VNI) const {
+    const VNInfo *VNI, bool &SubRangeDead) const {
   unsigned TrackReg = Reg;
+  SubRangeDead = false;
 
   while (!VNI->isPHIDef()) {
     SlotIndex Def = VNI->def;
@@ -2280,6 +2281,12 @@ std::pair<const VNInfo*, unsigned> JoinVals::followCopyChain(
         break;
       }
     }
+    if (ValueIn == nullptr && SubIdx == 0) {
+      // Didn't match a subrange so it must actually be dead
+      // Set the flag and let the caller deal with this scenario
+      SubRangeDead = true;
+      break;
+    }
     if (ValueIn == nullptr) {
       // Reaching an undefined value is legitimate, for example:
       //
@@ -2299,13 +2306,14 @@ bool JoinVals::valuesIdentical(VNInfo *Value0, VNInfo *Value1,
                                const JoinVals &Other) const {
   const VNInfo *Orig0;
   unsigned Reg0;
-  std::tie(Orig0, Reg0) = followCopyChain(Value0);
-  if (Orig0 == Value1 && Reg0 == Other.Reg)
+  bool SubRangeDead = false;
+  std::tie(Orig0, Reg0) = followCopyChain(Value0, SubRangeDead);
+  if ((Orig0 == Value1 && Reg0 == Other.Reg) || SubRangeDead)
     return true;
 
   const VNInfo *Orig1;
   unsigned Reg1;
-  std::tie(Orig1, Reg1) = Other.followCopyChain(Value1);
+  std::tie(Orig1, Reg1) = Other.followCopyChain(Value1, SubRangeDead);
   // If both values are undefined, and the source registers are the same
   // register, the values are identical. Filter out cases where only one
   // value is defined.
@@ -2316,7 +2324,7 @@ bool JoinVals::valuesIdentical(VNInfo *Value0, VNInfo *Value1,
   // same register. Note that we cannot compare VNInfos directly as some of
   // them might be from a copy created in mergeSubRangeInto()  while the other
   // is from the original LiveInterval.
-  return Orig0->def == Orig1->def && Reg0 == Reg1;
+  return (Orig0->def == Orig1->def && Reg0 == Reg1) || SubRangeDead;
 }
 
 JoinVals::ConflictResolution
