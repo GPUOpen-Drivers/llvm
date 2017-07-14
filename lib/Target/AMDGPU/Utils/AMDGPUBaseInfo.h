@@ -385,6 +385,9 @@ int64_t getSMRDEncodedOffset(const MCSubtargetInfo &ST, int64_t ByteOffset);
 /// not the encoded offset.
 bool isLegalSMRDImmOffset(const MCSubtargetInfo &ST, int64_t ByteOffset);
 
+/// \returns true if SMRD offsets are byte aligned
+bool isSMRDOffsetByte(const MCSubtargetInfo &ST);
+
 } // end namespace AMDGPU
 } // end namespace llvm
 
