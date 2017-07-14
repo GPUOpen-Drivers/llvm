@@ -667,6 +667,9 @@ struct SIModeRegisterDefaults {
   }
 };
 
+/// \returns true if SMRD offsets are byte aligned
+bool isSMRDOffsetByte(const MCSubtargetInfo &ST);
+
 } // end namespace AMDGPU
 } // end namespace llvm
 
