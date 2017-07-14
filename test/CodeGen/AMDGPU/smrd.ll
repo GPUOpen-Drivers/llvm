@@ -333,21 +333,20 @@ main_body:
 
 ; GCN-LABEL: {{^}}smrd_imm_merge_m0:
 ;
-; SICIVI: s_buffer_load_dwordx2
-; SICIVI: s_mov_b32 m0
-; SICIVI_DAG: v_interp_p1_f32
-; SICIVI_DAG: v_interp_p1_f32
-; SICIVI_DAG: v_interp_p1_f32
-; SICIVI_DAG: v_interp_p2_f32
-; SICIVI_DAG: v_interp_p2_f32
-; SICIVI_DAG: v_interp_p2_f32
+; GCN: s_buffer_load_dwordx2
+; GCN: s_mov_b32 m0
+; GCN_DAG: v_interp_p1_f32
+; GCN_DAG: v_interp_p1_f32
+; GCN_DAG: v_interp_p1_f32
+; GCN_DAG: v_interp_p2_f32
+; GCN_DAG: v_interp_p2_f32
+; GCN_DAG: v_interp_p2_f32
 ; SICIVI: s_mov_b32 m0
 ; SICIVI: v_movrels_b32_e32
+; GFX9: s_set_gpr_idx_on
+; GFX9: v_mov_b32
+; GFX9: s_set_gpr_idx_off
 ;
-; Merging is still thwarted on GFX9 due to s_set_gpr_idx
-;
-; GFX9: s_buffer_load_dword
-; GFX9: s_buffer_load_dword
 define amdgpu_ps float @smrd_imm_merge_m0(<4 x i32> inreg %desc, i32 inreg %prim, float %u, float %v) #0 {
 main_body:
   %idx1.f = call float @llvm.SI.load.const.v4i32(<4 x i32> %desc, i32 0)
@@ -480,8 +479,10 @@ main_body:
 ; GCN-LABEL: {{^}}smrd_load_nonconst2:
 ; SIVIGFX9: buffer_load_dword v{{[0-9]+}}, v{{[0-9]+}}, s[{{[0-9]+:[0-9]+}}], 0 offen
 ; SIVIGFX9: buffer_load_dwordx4 v[{{[0-9]+:[0-9]+}}], v{{[0-9]+}}, s[{{[0-9]+:[0-9]+}}], 0 offen
+; SIVIGFX9: buffer_load_dwordx4 v[{{[0-9]+:[0-9]+}}], v{{[0-9]+}}, s[{{[0-9]+:[0-9]+}}], 0 offen offset:16
 ; CI: buffer_load_dword v{{[0-9]+}}, v{{[0-9]+}}, s[{{[0-9]+:[0-9]+}}], 0 offen
 ; CI: buffer_load_dwordx4 v[{{[0-9]+:[0-9]+}}], v{{[0-9]+}}, s[{{[0-9]+:[0-9]+}}], 0 offen
+; CI: buffer_load_dwordx4 v[{{[0-9]+:[0-9]+}}], v{{[0-9]+}}, s[{{[0-9]+:[0-9]+}}], 0 offen offset:16
 ; GCN: s_endpgm
 define amdgpu_ps void @smrd_load_nonconst2(<4 x i32> addrspace(4)* inreg %arg, <4 x i32> addrspace(4)* inreg %arg1, <32 x i8> addrspace(4)* inreg %arg2, i32 inreg %arg3, <2 x i32> %arg4, <2 x i32> %arg5, <2 x i32> %arg6, <3 x i32> %arg7, <2 x i32> %arg8, <2 x i32> %arg9, <2 x i32> %arg10, float %arg11, float %arg12, float %arg13, float %arg14, float %arg15, float %arg16, float %arg17, float %arg18, float %arg19, <4 x i32> addrspace(4)* inreg %in, i32 %ncoff) #0 {
 main_body:
@@ -490,9 +491,11 @@ main_body:
   %tmp21 = call float @llvm.SI.load.const.v4i32(<4 x i32> %tmp20, i32 %ncoff)
   %tmp22 = load <4 x i32>, <4 x i32> addrspace(4)* %in
   %s.buffer = call <8 x i32> @llvm.amdgcn.s.buffer.load.v8i32(<4 x i32> %tmp22, i32 %ncoff, i32 0)
-  %s.buffer.elt = extractelement <8 x i32> %s.buffer, i32 1
-  %s.buffer.float = bitcast i32 %s.buffer.elt to float
-  call void @llvm.amdgcn.exp.f32(i32 0, i32 15, float %tmp21, float %tmp21, float %tmp21, float %s.buffer.float, i1 true, i1 true) #0
+  %s.buffer.elt.1 = extractelement <8 x i32> %s.buffer, i32 1
+  %s.buffer.float.1 = bitcast i32 %s.buffer.elt.1 to float
+  %s.buffer.elt.2 = extractelement <8 x i32> %s.buffer, i32 6
+  %s.buffer.float.2 = bitcast i32 %s.buffer.elt.2 to float
+  call void @llvm.amdgcn.exp.f32(i32 0, i32 15, float %tmp21, float %tmp21, float %s.buffer.float.1, float %s.buffer.float.2, i1 true, i1 true) #0
   ret void
 }
 
