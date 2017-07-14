@@ -1002,6 +1002,10 @@ bool splitMUBUFOffset(uint32_t Imm, uint32_t &SOffset, uint32_t &ImmOffset,
   return true;
 }
 
+bool isSMRDOffsetByte(const MCSubtargetInfo &ST) {
+  return isGCN3Encoding(ST);
+}
+
 } // end namespace AMDGPU
 
 } // end namespace llvm
