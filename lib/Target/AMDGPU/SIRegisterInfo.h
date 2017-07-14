@@ -233,6 +233,8 @@ public:
                                 MachineRegisterInfo &MRI,
                                 LiveIntervals *LIS) const;
 
+  int16_t calcSubRegIdx(const TargetRegisterClass *RC, unsigned SubOffset) const;
+
 private:
   void buildSpillLoadStore(MachineBasicBlock::iterator MI,
                            unsigned LoadStoreOp,
