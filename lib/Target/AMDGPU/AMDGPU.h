@@ -48,6 +48,7 @@ FunctionPass *createSIWholeQuadModePass();
 FunctionPass *createSIFixControlFlowLiveIntervalsPass();
 FunctionPass *createSIOptimizeExecMaskingPreRAPass();
 FunctionPass *createSIFixSGPRCopiesPass();
+FunctionPass *createSIBufMemMergePass();
 FunctionPass *createSIMemoryLegalizerPass();
 FunctionPass *createSIDebuggerInsertNopsPass();
 FunctionPass *createSIInsertWaitsPass();
@@ -112,6 +113,10 @@ extern char &SILowerI1CopiesID;
 
 void initializeSILoadStoreOptimizerPass(PassRegistry &);
 extern char &SILoadStoreOptimizerID;
+
+void initializeSIBufMemMergePass(PassRegistry &);
+extern char &SIBufMemMergeID;
+  
 
 void initializeSIWholeQuadModePass(PassRegistry &);
 extern char &SIWholeQuadModeID;

@@ -228,6 +228,8 @@ public:
     return AMDGPU::SGPR30_SGPR31;
   }
 
+  int16_t calcSubRegIdx(const TargetRegisterClass *RC, unsigned SubOffset) const;
+
 private:
   void buildSpillLoadStore(MachineBasicBlock::iterator MI,
                            unsigned LoadStoreOp,

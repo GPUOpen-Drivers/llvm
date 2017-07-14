@@ -173,6 +173,7 @@ extern "C" void LLVMInitializeAMDGPUTarget() {
   initializeSIWholeQuadModePass(*PR);
   initializeSILowerControlFlowPass(*PR);
   initializeSIInsertSkipsPass(*PR);
+  initializeSIBufMemMergePass(*PR);
   initializeSIMemoryLegalizerPass(*PR);
   initializeSIDebuggerInsertNopsPass(*PR);
   initializeSIOptimizeExecMaskingPass(*PR);
@@ -772,6 +773,7 @@ void GCNPassConfig::addMachineSSAOptimization() {
   addPass(&SIFoldOperandsID);
   addPass(&DeadMachineInstructionElimID);
   addPass(&SILoadStoreOptimizerID);
+  addPass(&SIBufMemMergeID);
   if (EnableSDWAPeephole) {
     addPass(&SIPeepholeSDWAID);
     addPass(&EarlyMachineLICMID);
