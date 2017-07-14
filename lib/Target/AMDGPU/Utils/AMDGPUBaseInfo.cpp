@@ -957,7 +957,11 @@ bool isLegalSMRDImmOffset(const MCSubtargetInfo &ST, int64_t ByteOffset) {
   return isGCN3Encoding(ST) ?
     isUInt<20>(EncodedOffset) : isUInt<8>(EncodedOffset);
 }
-
+  
+bool isSMRDOffsetByte(const MCSubtargetInfo &ST) {
+  return isGCN3Encoding(ST);
+}
+  
 } // end namespace AMDGPU
 
 } // end namespace llvm
