@@ -388,6 +388,9 @@ bool isLegalSMRDImmOffset(const MCSubtargetInfo &ST, int64_t ByteOffset);
 /// \returns true if the intrinsic is divergent
 bool isIntrinsicSourceOfDivergence(unsigned IntrID);
 
+/// \returns true if SMRD offsets are byte aligned
+bool isSMRDOffsetByte(const MCSubtargetInfo &ST);
+
 } // end namespace AMDGPU
 } // end namespace llvm
 
