@@ -117,6 +117,11 @@ static cl::opt<unsigned> LargeIntervalFreqThreshold(
              "coalescing to control the compile time. "),
     cl::init(100));
 
+static cl::opt<bool>
+VerifyLiveIntervals("verify-live-intervals",
+         cl::desc("Verify LiveIntervals by inspecting all Segments for invalid slot indices"),
+         cl::Hidden);
+
 namespace {
 
   class RegisterCoalescer : public MachineFunctionPass,
@@ -3729,6 +3734,15 @@ bool RegisterCoalescer::runOnMachineFunction(MachineFunction &fn) {
       }
     }
   }
+
+  // Verify that the Segments in the LiveIntervals are still valid
+  // This check looks for Segments within Intervals that start or end with
+  // invalid slot indices
+  // It is often more helpful for debug to insert this check after each joinCopy
+  // to pinpoint the precise cause of the error
+  if (VerifyLiveIntervals)
+    // Check that LiveIntervals are still valid after joinCopy
+    assert(LIS->verifySegments() && "joinCopy has resulted in invalid Segments in liveIntervals");
 
   LLVM_DEBUG(dump());
   if (VerifyCoalescing)

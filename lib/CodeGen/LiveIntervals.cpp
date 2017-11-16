@@ -1656,3 +1656,59 @@ void LiveIntervals::constructMainRangeFromSubranges(LiveInterval &LI) {
   LRCalc->reset(MF, getSlotIndexes(), DomTree, &getVNInfoAllocator());
   LRCalc->constructMainRangeFromSubranges(LI);
 }
+
+bool LiveIntervals::verifySegments(void) const {
+  // Simple verification that ensures that all the Intervals and SubRanges refer
+  // to valid slots.
+  // This is intended to be used for testing purposes - usually after
+  // encountering code that provokes a SubRange join assertion
+
+  bool Result = true;
+
+  for (unsigned i = 0, e = MRI->getNumVirtRegs(); i != e; ++i) {
+    unsigned Reg = TargetRegisterInfo::index2VirtReg(i);
+    if (hasInterval(Reg)) {
+      const LiveInterval &Interval = getInterval(Reg);
+      for (const LiveInterval::Segment &S : Interval.segments) {
+        MachineInstr *MI = nullptr;
+        if (!S.start.isBlock()) {
+          MI = getInstructionFromIndex(S.start);
+          if (!MI) {
+            LLVM_DEBUG(dbgs() << "verifySegments " << Interval << " : bad segment start = " << S << "\n");
+            Result = false;
+          }
+        }
+        if (!S.end.isBlock()) {
+          MI = getInstructionFromIndex(S.end);
+          if (!MI) {
+            LLVM_DEBUG(dbgs() << "verifySegments " << Interval << " : bad segment end = " << S << "\n");
+            Result = false;
+          }
+        }
+      }
+
+      // Check SubRanges
+      for (const LiveInterval::SubRange &SR : Interval.subranges()) {
+        for (const LiveInterval::Segment &S : SR.segments) {
+          MachineInstr *MI = nullptr;
+          if (!S.start.isBlock()) {
+            MI = getInstructionFromIndex(S.start);
+            if (!MI) {
+              LLVM_DEBUG(dbgs() << "verifySegments " << Interval << " : SubRange : " << SR << " : bad segment start = " << S << "\n");
+              Result = false;
+            }
+          }
+          if (!S.end.isBlock()) {
+            MI = getInstructionFromIndex(S.end);
+            if (!MI) {
+              LLVM_DEBUG(dbgs() << "verifySegments " << Interval << " : SubRange : " << SR << " : bad segment end = " << S << "\n");
+              Result = false;
+            }
+          }
+        }
+      }
+    }
+  }
+  return Result;
+}
+

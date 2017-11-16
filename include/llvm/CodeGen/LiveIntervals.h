@@ -444,6 +444,10 @@ class VirtRegMap;
     /// have any segments or value numbers.
     void constructMainRangeFromSubranges(LiveInterval &LI);
 
+    /// Simple check to verify that segments/SlotIndices are valid in
+    /// LiveIntervals including SubRanges
+    bool verifySegments(void) const;
+
   private:
     /// Compute live intervals for all virtual registers.
     void computeVirtRegs();
