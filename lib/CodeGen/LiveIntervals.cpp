@@ -602,7 +602,12 @@ void LiveIntervals::pruneValue(LiveRange &LR, SlotIndex Kill,
   // If VNI isn't live out from KillMBB, the value is trivially pruned.
   if (LRQ.endPoint() < MBBEnd) {
     LR.removeSegment(Kill, LRQ.endPoint());
-    if (EndPoints) EndPoints->push_back(LRQ.endPoint());
+    if (EndPoints) {
+      // For the case where KillSlot is for a segment with [1200r, 1200d: 0)
+      // We don't need to worry about marking the endpoint
+      if (!SlotIndex::isSameInstr(Kill, LRQ.endPoint()))
+        EndPoints->push_back(LRQ.endPoint());
+    }
     return;
   }
 
