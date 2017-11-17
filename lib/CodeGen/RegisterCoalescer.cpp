@@ -592,6 +592,13 @@ bool RegisterCoalescer::adjustCopiesBackFrom(const CoalescerPair &CP,
 
   // Do the same for the subregister segments.
   for (LiveInterval::SubRange &S : IntB.subranges()) {
+    // Check for SubRange Segments of the form [1234r,1234d:0) which can be
+    // removed to prevent creating bogus SubRange Segments
+    LiveInterval::iterator SS = S.FindSegmentContaining(CopyIdx);
+    if (SS != S.end() && SlotIndex::isSameInstr(SS->start, SS->end)) {
+      S.removeSegment(*SS, true);
+      continue;
+    }
     VNInfo *SubBValNo = S.getVNInfoAt(CopyIdx);
     S.addSegment(LiveInterval::Segment(FillerStart, FillerEnd, SubBValNo));
     VNInfo *SubValSNo = S.getVNInfoAt(AValNo->def.getPrevSlot());
@@ -614,6 +621,12 @@ bool RegisterCoalescer::adjustCopiesBackFrom(const CoalescerPair &CP,
   CopyMI->substituteRegister(IntA.reg, IntB.reg, 0, *TRI);
   if (AS->end == CopyIdx)
     shrinkToUses(&IntA);
+  // Also deal with subranges
+  for (LiveInterval::SubRange &S : IntA.subranges()) {
+    LiveInterval::iterator SS = S.FindSegmentContaining(CopyUseIdx);
+    if (SS->end == CopyIdx)
+      shrinkToUses(&IntA);
+  }
 
   ++numExtends;
   return true;
