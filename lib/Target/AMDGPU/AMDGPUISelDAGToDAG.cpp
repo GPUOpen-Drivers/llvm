@@ -1417,9 +1417,10 @@ bool AMDGPUDAGToDAGISel::SelectSMRDOffset(SDValue ByteOffsetNode,
   SDLoc SL(ByteOffsetNode);
   AMDGPUSubtarget::Generation Gen = Subtarget->getGeneration();
   int64_t ByteOffset = C->getSExtValue();
+  bool Aligned = AMDGPU::isSMRDAligned(*Subtarget, ByteOffset);
   int64_t EncodedOffset = AMDGPU::getSMRDEncodedOffset(*Subtarget, ByteOffset);
 
-  if (AMDGPU::isLegalSMRDImmOffset(*Subtarget, ByteOffset)) {
+  if (Aligned && AMDGPU::isLegalSMRDImmOffset(*Subtarget, ByteOffset)) {
     Offset = CurDAG->getTargetConstant(EncodedOffset, SL, MVT::i32);
     Imm = true;
     return true;
@@ -1428,7 +1429,8 @@ bool AMDGPUDAGToDAGISel::SelectSMRDOffset(SDValue ByteOffsetNode,
   if (!isUInt<32>(EncodedOffset) || !isUInt<32>(ByteOffset))
     return false;
 
-  if (Gen == AMDGPUSubtarget::SEA_ISLANDS && isUInt<32>(EncodedOffset)) {
+  if (Gen == AMDGPUSubtarget::SEA_ISLANDS &&
+      Aligned && isUInt<32>(EncodedOffset)) {
     // 32-bit Immediates are supported on Sea Islands.
     Offset = CurDAG->getTargetConstant(EncodedOffset, SL, MVT::i32);
   } else {
