@@ -4805,8 +4805,9 @@ SDValue SITargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
                           MFI->getArgInfo().WorkItemIDZ);
   case AMDGPUIntrinsic::SI_load_const: {
     SDValue Ops[] = {
-      Op.getOperand(1),
-      Op.getOperand(2)
+      Op.getOperand(1),   // Ptr
+      Op.getOperand(2),   // Offset
+      DAG.getTargetConstant(0, DL, MVT::i1) // glc
     };
 
     MachineMemOperand *MMO = MF.getMachineMemOperand(
@@ -4814,7 +4815,25 @@ SDValue SITargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
         MachineMemOperand::MOLoad | MachineMemOperand::MODereferenceable |
             MachineMemOperand::MOInvariant,
         VT.getStoreSize(), 4);
-    return DAG.getMemIntrinsicNode(AMDGPUISD::LOAD_CONSTANT, DL,
+    SDVTList VTList = DAG.getVTList(MVT::i32);
+    SDValue Load = DAG.getMemIntrinsicNode(AMDGPUISD::SBUFFER_LOAD, DL,
+                                           VTList, Ops, MVT::i32, MMO);
+
+    return DAG.getNode(ISD::BITCAST, DL, MVT::f32, Load);
+  }
+  case Intrinsic::amdgcn_s_buffer_load: {
+    SDValue Ops[] = {
+      Op.getOperand(1), // Ptr
+      Op.getOperand(2), // Offset
+      Op.getOperand(3)  // glc
+    };
+    
+    MachineMemOperand *MMO = MF.getMachineMemOperand(
+                                                     MachinePointerInfo(),
+                                                     MachineMemOperand::MOLoad | MachineMemOperand::MODereferenceable |
+                                                     MachineMemOperand::MOInvariant,
+                                                     VT.getStoreSize(), VT.getStoreSize());
+    return DAG.getMemIntrinsicNode(AMDGPUISD::SBUFFER_LOAD, DL,
                                    Op->getVTList(), Ops, VT, MMO);
   }
   case Intrinsic::amdgcn_fdiv_fast:
