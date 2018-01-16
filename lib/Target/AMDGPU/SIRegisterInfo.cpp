@@ -732,11 +732,17 @@ bool SIRegisterInfo::spillSGPR(MachineBasicBlock::iterator MI,
     if (SpillToVGPR) {
       SIMachineFunctionInfo::SpilledReg Spill = VGPRSpills[i];
 
+      // Using Undef on the "old value of vgpr" operand here is a hack to avoid
+      // MachineVerifier objecting when that same physical vgpr was killed by
+      // an earlier instruction. We can't tell here whether the vgpr is
+      // actually undef because no sgpr was previously spilled to it. It does
+      // not have any detrimental effect at this stage.
       BuildMI(*MBB, MI, DL,
-              TII->getMCOpcodeFromPseudo(AMDGPU::V_WRITELANE_B32),
+              TII->get(AMDGPU::V_WRITELANE_B32),
               Spill.VGPR)
         .addReg(SubReg, getKillRegState(IsKill))
-        .addImm(Spill.Lane);
+        .addImm(Spill.Lane)
+        .addReg(Spill.VGPR, RegState::Undef);
 
       // FIXME: Since this spills to another register instead of an actual
       // frame index, we should delete the frame index when all references to

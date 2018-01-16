@@ -775,6 +775,18 @@ def int_amdgcn_readlane :
   GCCBuiltin<"__builtin_amdgcn_readlane">,
   Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem, IntrConvergent]>;
 
+// The value to write and lane arguments must be uniform across the currently
+// active threads of the current wave. Otherwise, the result is undefined.
+// Args are:
+// 0: uniform value to write: returned by the selected lane
+// 1: uniform lane select
+// 2: value that all lanes other than the selected one return
+def int_amdgcn_writelane :
+  GCCBuiltin<"__builtin_amdgcn_writelane">,
+  Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty, llvm_i32_ty],
+  [IntrNoMem, IntrConvergent]
+>;
+
 def int_amdgcn_alignbit : Intrinsic<[llvm_i32_ty],
   [llvm_i32_ty, llvm_i32_ty, llvm_i32_ty],
   [IntrNoMem, IntrSpeculatable]
