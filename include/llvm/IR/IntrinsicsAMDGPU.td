@@ -490,6 +490,24 @@ def int_amdgcn_image_atomic_cmpswap : Intrinsic <
    llvm_i1_ty],       // slc(imm)
   [], "", [SDNPMemOperand]>;
 
+def int_amdgcn_buffer_load_ubyte : Intrinsic <
+  [llvm_float_ty],
+  [llvm_v4i32_ty,     // rsrc(SGPR)
+   llvm_i32_ty,       // vindex(VGPR)
+   llvm_i32_ty,       // offset(SGPR/VGPR/imm)
+   llvm_i1_ty,        // glc(imm)
+   llvm_i1_ty],       // slc(imm)
+  [], "", [SDNPMemOperand]>;
+
+def int_amdgcn_buffer_load_ushort : Intrinsic <
+  [llvm_float_ty],
+  [llvm_v4i32_ty,     // rsrc(SGPR)
+   llvm_i32_ty,       // vindex(VGPR)
+   llvm_i32_ty,       // offset(SGPR/VGPR/imm)
+   llvm_i1_ty,        // glc(imm)
+   llvm_i1_ty],       // slc(imm)
+  [], "", [SDNPMemOperand]>;
+
 class AMDGPUBufferLoad : Intrinsic <
   [llvm_anyfloat_ty],
   [llvm_v4i32_ty,     // rsrc(SGPR)
@@ -507,6 +525,26 @@ def int_amdgcn_s_buffer_load : Intrinsic <
    llvm_i32_ty,       // byte offset(SGPR/VGPR/imm)
    llvm_i1_ty],       // glc
   [IntrNoMem]>;
+
+def int_amdgcn_buffer_store_byte : Intrinsic <
+  [],
+  [llvm_float_ty,     // vdata(VGPR) -- this variant writes low 8 bits
+   llvm_v4i32_ty,     // rsrc(SGPR)
+   llvm_i32_ty,       // vindex(VGPR)
+   llvm_i32_ty,       // offset(SGPR/VGPR/imm)
+   llvm_i1_ty,        // glc(imm)
+   llvm_i1_ty],       // slc(imm)
+  [IntrWriteMem], "", [SDNPMemOperand]>;
+
+def int_amdgcn_buffer_store_short : Intrinsic <
+  [],
+  [llvm_float_ty,     // vdata(VGPR) -- this variant writes low 16 bits
+   llvm_v4i32_ty,     // rsrc(SGPR)
+   llvm_i32_ty,       // vindex(VGPR)
+   llvm_i32_ty,       // offset(SGPR/VGPR/imm)
+   llvm_i1_ty,        // glc(imm)
+   llvm_i1_ty],       // slc(imm)
+  [IntrWriteMem], "", [SDNPMemOperand]>;
 
 class AMDGPUBufferStore : Intrinsic <
   [],
