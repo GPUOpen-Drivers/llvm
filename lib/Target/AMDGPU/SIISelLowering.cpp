@@ -5048,6 +5048,8 @@ SDValue SITargetLowering::LowerINTRINSIC_W_CHAIN(SDValue Op,
                                    M->getMemoryVT(), M->getMemOperand());
   }
   case Intrinsic::amdgcn_buffer_load:
+  case Intrinsic::amdgcn_buffer_load_ubyte:
+  case Intrinsic::amdgcn_buffer_load_ushort:
   case Intrinsic::amdgcn_buffer_load_format: {
     SDValue Ops[] = {
       Op.getOperand(0), // Chain
@@ -5058,8 +5060,15 @@ SDValue SITargetLowering::LowerINTRINSIC_W_CHAIN(SDValue Op,
       Op.getOperand(6)  // slc
     };
 
-    unsigned Opc = (IntrID == Intrinsic::amdgcn_buffer_load) ?
-        AMDGPUISD::BUFFER_LOAD : AMDGPUISD::BUFFER_LOAD_FORMAT;
+    unsigned Opc = 0;
+    switch (IntrID) {
+      case Intrinsic::amdgcn_buffer_load:         Opc = AMDGPUISD::BUFFER_LOAD;        break;
+      case Intrinsic::amdgcn_buffer_load_ubyte:   Opc = AMDGPUISD::BUFFER_LOAD_UBYTE;  break;
+      case Intrinsic::amdgcn_buffer_load_ushort:  Opc = AMDGPUISD::BUFFER_LOAD_USHORT; break;
+      case Intrinsic::amdgcn_buffer_load_format:  Opc = AMDGPUISD::BUFFER_LOAD_FORMAT; break;
+      default: llvm_unreachable("Unexpected IntrinsicID");
+    }
+
     EVT VT = Op.getValueType();
     EVT IntVT = VT.changeTypeToInteger();
     auto *M = cast<MemSDNode>(Op);
@@ -5377,6 +5386,8 @@ SDValue SITargetLowering::LowerINTRINSIC_VOID(SDValue Op,
   }
 
   case Intrinsic::amdgcn_buffer_store:
+  case Intrinsic::amdgcn_buffer_store_byte:
+  case Intrinsic::amdgcn_buffer_store_short:
   case Intrinsic::amdgcn_buffer_store_format: {
     SDValue VData = Op.getOperand(2);
     bool IsD16 = (VData.getValueType().getScalarType() == MVT::f16);
@@ -5391,8 +5402,14 @@ SDValue SITargetLowering::LowerINTRINSIC_VOID(SDValue Op,
       Op.getOperand(6), // glc
       Op.getOperand(7)  // slc
     };
-    unsigned Opc = IntrinsicID == Intrinsic::amdgcn_buffer_store ?
-                   AMDGPUISD::BUFFER_STORE : AMDGPUISD::BUFFER_STORE_FORMAT;
+    unsigned Opc = 0;
+    switch (IntrinsicID) {
+      case Intrinsic::amdgcn_buffer_store:        Opc = AMDGPUISD::BUFFER_STORE;        break;
+      case Intrinsic::amdgcn_buffer_store_byte:   Opc = AMDGPUISD::BUFFER_STORE_BYTE;   break;
+      case Intrinsic::amdgcn_buffer_store_short:  Opc = AMDGPUISD::BUFFER_STORE_SHORT;  break;
+      case Intrinsic::amdgcn_buffer_store_format: Opc = AMDGPUISD::BUFFER_STORE_FORMAT; break;
+      default: llvm_unreachable("Unexpected IntrinsicID");
+    }
     Opc = IsD16 ? AMDGPUISD::BUFFER_STORE_FORMAT_D16 : Opc;
     MemSDNode *M = cast<MemSDNode>(Op);
     return DAG.getMemIntrinsicNode(Opc, DL, Op->getVTList(), Ops,

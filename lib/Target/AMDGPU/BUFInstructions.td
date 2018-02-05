@@ -1090,6 +1090,8 @@ let SubtargetPredicate = HasPackedD16VMem in {
 defm : MUBUF_LoadIntrinsicPat<SIbuffer_load, f32, "BUFFER_LOAD_DWORD">;
 defm : MUBUF_LoadIntrinsicPat<SIbuffer_load, v2f32, "BUFFER_LOAD_DWORDX2">;
 defm : MUBUF_LoadIntrinsicPat<SIbuffer_load, v4f32, "BUFFER_LOAD_DWORDX4">;
+defm : MUBUF_LoadIntrinsicPat<SIbuffer_load_ubyte, f32, "BUFFER_LOAD_UBYTE">;
+defm : MUBUF_LoadIntrinsicPat<SIbuffer_load_ushort, f32, "BUFFER_LOAD_USHORT">;
 
 multiclass MUBUF_StoreIntrinsicPat<SDPatternOperator name, ValueType vt,
                                    string opcode> {
@@ -1150,6 +1152,8 @@ let SubtargetPredicate = HasPackedD16VMem in {
 defm : MUBUF_StoreIntrinsicPat<SIbuffer_store, f32, "BUFFER_STORE_DWORD">;
 defm : MUBUF_StoreIntrinsicPat<SIbuffer_store, v2f32, "BUFFER_STORE_DWORDX2">;
 defm : MUBUF_StoreIntrinsicPat<SIbuffer_store, v4f32, "BUFFER_STORE_DWORDX4">;
+defm : MUBUF_StoreIntrinsicPat<SIbuffer_store_byte, f32, "BUFFER_STORE_BYTE">;
+defm : MUBUF_StoreIntrinsicPat<SIbuffer_store_short, f32, "BUFFER_STORE_SHORT">;
 
 //===----------------------------------------------------------------------===//
 // buffer_atomic patterns
