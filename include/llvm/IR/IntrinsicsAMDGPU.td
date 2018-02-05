@@ -890,6 +890,26 @@ let TargetPrefix = "amdgcn" in {
 
 defset list<AMDGPURsrcIntrinsic> AMDGPUBufferIntrinsics = {
 
+def int_amdgcn_buffer_load_ubyte : Intrinsic <
+  [llvm_float_ty],
+  [llvm_v4i32_ty,     // rsrc(SGPR)
+   llvm_i32_ty,       // vindex(VGPR)
+   llvm_i32_ty,       // offset(SGPR/VGPR/imm)
+   llvm_i1_ty,        // glc(imm)
+   llvm_i1_ty],       // slc(imm)
+  [], "", [SDNPMemOperand]>,
+  AMDGPURsrcIntrinsic<0>;
+
+def int_amdgcn_buffer_load_ushort : Intrinsic <
+  [llvm_float_ty],
+  [llvm_v4i32_ty,     // rsrc(SGPR)
+   llvm_i32_ty,       // vindex(VGPR)
+   llvm_i32_ty,       // offset(SGPR/VGPR/imm)
+   llvm_i1_ty,        // glc(imm)
+   llvm_i1_ty],       // slc(imm)
+  [], "", [SDNPMemOperand]>,
+  AMDGPURsrcIntrinsic<0>;
+
 class AMDGPUBufferLoad : Intrinsic <
   [llvm_anyfloat_ty],
   [llvm_v4i32_ty,     // rsrc(SGPR)
@@ -909,6 +929,28 @@ def int_amdgcn_s_buffer_load : Intrinsic <
    llvm_i1_ty],       // glc
   [IntrNoMem]>,
   AMDGPURsrcIntrinsic<0>;
+
+def int_amdgcn_buffer_store_byte : Intrinsic <
+  [],
+  [llvm_float_ty,     // vdata(VGPR) -- this variant writes low 8 bits
+   llvm_v4i32_ty,     // rsrc(SGPR)
+   llvm_i32_ty,       // vindex(VGPR)
+   llvm_i32_ty,       // offset(SGPR/VGPR/imm)
+   llvm_i1_ty,        // glc(imm)
+   llvm_i1_ty],       // slc(imm)
+  [IntrWriteMem], "", [SDNPMemOperand]>,
+  AMDGPURsrcIntrinsic<1>;
+
+def int_amdgcn_buffer_store_short : Intrinsic <
+  [],
+  [llvm_float_ty,     // vdata(VGPR) -- this variant writes low 16 bits
+   llvm_v4i32_ty,     // rsrc(SGPR)
+   llvm_i32_ty,       // vindex(VGPR)
+   llvm_i32_ty,       // offset(SGPR/VGPR/imm)
+   llvm_i1_ty,        // glc(imm)
+   llvm_i1_ty],       // slc(imm)
+  [IntrWriteMem], "", [SDNPMemOperand]>,
+  AMDGPURsrcIntrinsic<1>;
 
 class AMDGPUBufferStore : Intrinsic <
   [],

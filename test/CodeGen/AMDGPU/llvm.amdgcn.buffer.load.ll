@@ -227,9 +227,31 @@ main_body:
   ret void
 }
 
+;CHECK-LABEL: {{^}}buffer_load_ubyte:
+;CHECK-NEXT: %bb.
+;CHECK-NEXT: buffer_load_ubyte v{{[0-9]}}, off, s[0:3], 0 offset:8
+;CHECK: s_waitcnt
+define amdgpu_ps float @buffer_load_ubyte(<4 x i32> inreg %rsrc) {
+main_body:
+  %val = call float @llvm.amdgcn.buffer.load.ubyte(<4 x i32> %rsrc, i32 0, i32 8, i1 0, i1 0)
+  ret float %val
+}
+
+;CHECK-LABEL: {{^}}buffer_load_ushort:
+;CHECK-NEXT: %bb.
+;CHECK-NEXT: buffer_load_ushort v{{[0-9]}}, off, s[0:3], 0 offset:16
+;CHECK: s_waitcnt
+define amdgpu_ps float @buffer_load_ushort(<4 x i32> inreg %rsrc) {
+main_body:
+  %val = call float @llvm.amdgcn.buffer.load.ushort(<4 x i32> %rsrc, i32 0, i32 16, i1 0, i1 0)
+  ret float %val
+}
+
 declare float @llvm.amdgcn.buffer.load.f32(<4 x i32>, i32, i32, i1, i1) #0
 declare <2 x float> @llvm.amdgcn.buffer.load.v2f32(<4 x i32>, i32, i32, i1, i1) #0
 declare <4 x float> @llvm.amdgcn.buffer.load.v4f32(<4 x i32>, i32, i32, i1, i1) #0
+declare float @llvm.amdgcn.buffer.load.ubyte(<4 x i32>, i32, i32, i1, i1) #0
+declare float @llvm.amdgcn.buffer.load.ushort(<4 x i32>, i32, i32, i1, i1) #0
 declare void @llvm.amdgcn.exp.f32(i32, i32, float, float, float, float, i1, i1) #0
 
 attributes #0 = { nounwind readonly }
