@@ -768,7 +768,9 @@ public:
 
   /// Legalize operands in \p MI by either commuting it or inserting a
   /// copy of src1.
-  void legalizeOperandsVOP2(MachineRegisterInfo &MRI, MachineInstr &MI) const;
+  void legalizeOperandsVOP2(MachineRegisterInfo &MRI,
+                            MachineInstr &MI,
+                            SetVectorType &Worklist) const;
 
   /// Fix operands in \p MI to satisfy constant bus requirements.
   void legalizeOperandsVOP3(MachineRegisterInfo &MRI, MachineInstr &MI) const;
@@ -790,7 +792,7 @@ public:
 
   /// Legalize all operands in this instruction.  This function may
   /// create new instruction and insert them before \p MI.
-  void legalizeOperands(MachineInstr &MI) const;
+  void legalizeOperands(MachineInstr &MI, SetVectorType &Worklist) const;
 
   /// Replace this instruction's opcode with the equivalent VALU
   /// opcode.  This function will also move the users of \p MI to the
