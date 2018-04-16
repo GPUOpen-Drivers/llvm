@@ -410,6 +410,11 @@ def Pseudo_SReg_128 : RegisterClass<"AMDGPU", [v4i32, v2i64], 32,
   let CopyCost = -1;
 }
 
+def SReg_32_XSpecial : RegisterClass<"AMDGPU", [i32, f32, i16, f16, v2i16, v2f16], 32,
+  (add SGPR_32)> {
+  let AllocationPriority = 7;
+}
+
 // Subset of SReg_32 without M0 for SMRD instructions and alike.
 // See comments in SIInstructions.td for more info.
 def SReg_32_XM0_XEXEC : RegisterClass<"AMDGPU", [i32, f32, i16, f16, v2i16, v2f16], 32,
@@ -442,6 +447,12 @@ def SGPR_64 : RegisterClass<"AMDGPU", [v2i32, i64, f64], 32, (add SGPR_64Regs)> 
 
 def TTMP_64 : RegisterClass<"AMDGPU", [v2i32, i64, f64], 32, (add TTMP_64Regs)> {
   let isAllocatable = 0;
+}
+
+def SReg_64_XSpecial : RegisterClass<"AMDGPU", [v2i32, i64, f64, i1], 32,
+  (add SGPR_64)> {
+  let CopyCost = 1;
+  let AllocationPriority = 8;
 }
 
 def SReg_64_XEXEC : RegisterClass<"AMDGPU", [v2i32, i64, f64, i1], 32,

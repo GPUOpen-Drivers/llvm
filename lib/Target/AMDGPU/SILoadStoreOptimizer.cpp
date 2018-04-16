@@ -643,7 +643,7 @@ MachineBasicBlock::iterator SILoadStoreOptimizer::mergeSBufferLoadImmPair(
                               AMDGPU::S_BUFFER_LOAD_DWORDX2_IMM;
 
   const TargetRegisterClass *SuperRC =
-    CI.IsX2 ? &AMDGPU::SReg_128RegClass : &AMDGPU::SReg_64_XEXECRegClass;
+    CI.IsX2 ? &AMDGPU::SReg_128RegClass : &AMDGPU::SReg_64_XSpecialRegClass;
   unsigned DestReg = MRI->createVirtualRegister(SuperRC);
   unsigned MergedOffset = std::min(CI.Offset0, CI.Offset1);
 
