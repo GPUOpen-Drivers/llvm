@@ -3198,7 +3198,9 @@ void SIInstrInfo::legalizeOperandsVOP2(MachineRegisterInfo &MRI,
     unsigned PhiReg = MRI.createVirtualRegister(&AMDGPU::VGPR_32RegClass);
     unsigned InitReg = MRI.createVirtualRegister(&AMDGPU::VGPR_32RegClass);
 
-    BuildMI(MBB, I, DL, get(TargetOpcode::IMPLICIT_DEF), InitReg);
+    // Initialize the register we accumulate the result into
+    BuildMI(MBB, I, DL, get(AMDGPU::V_MOV_B32_e32), InitReg)
+      .addImm(0x0);
 
     unsigned DstReg = MI.getOperand(0).getReg();
     unsigned SaveExec = MRI.createVirtualRegister(&AMDGPU::SReg_64_XEXECRegClass);
