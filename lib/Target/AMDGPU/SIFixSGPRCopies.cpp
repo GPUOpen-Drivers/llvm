@@ -473,28 +473,26 @@ static bool fixWriteLane(MachineFunction &MF) {
           // Check for trivially easy constant prop into one of the operands
           // If this is the case then perform the operation now to resolve SGPR
           // issue
-          // This lambda is used to perform the change and check that the result
-          // is legal (and to back-out if not)
-          auto CheckOperand = [TII, &MI](MachineOperand &MO, int Idx, int64_t Imm) {
-            MachineOperand CandMO = MO;
-            CandMO.ChangeToImmediate(Imm);
-            if (TII->isImmOperandLegal(MI, Idx, CandMO)) {
-              MO.ChangeToImmediate(Imm);
-              return true;
+          bool Resolved = false;
+          std::vector<MachineOperand*> MOs { &Src0, &Src1 };
+          for (auto MO : MOs ) {
+            auto Imm = AMDGPU::foldToImm(*MO, &MRI, TII);
+            if (Imm && TII->isInlineConstant(APInt(64, *Imm, true))) {
+              MO->ChangeToImmediate(*Imm);
+              Changed = true;
+              Resolved = true;
+              break;
             }
-            return false;
-          };
+          }
 
-          auto Imm = AMDGPU::foldToImm(Src0, &MRI, TII);
-          if (Imm && CheckOperand(Src0, Src0Idx, *Imm)) continue;
-          if ((Imm = AMDGPU::foldToImm(Src1, &MRI, TII)) && CheckOperand(Src1, Src1Idx, *Imm)) continue;
-
-          // Haven't managed to resolve by replacing an SGPR with an immediate
-          // Move src1 to be in M0
-          BuildMI(*MI.getParent(), MI, MI.getDebugLoc(), TII->get(AMDGPU::S_MOV_B32), AMDGPU::M0)
-            .add(Src1);
-          Src1.ChangeToRegister(AMDGPU::M0, false);
-          Changed = true;
+          if (!Resolved) {
+            // Haven't managed to resolve by replacing an SGPR with an immediate
+            // Move src1 to be in M0
+            BuildMI(*MI.getParent(), MI, MI.getDebugLoc(), TII->get(AMDGPU::S_MOV_B32), AMDGPU::M0)
+              .add(Src1);
+            Src1.ChangeToRegister(AMDGPU::M0, false);
+            Changed = true;
+          }
         }
       }
     }
