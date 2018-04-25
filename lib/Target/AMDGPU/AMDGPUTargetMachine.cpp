@@ -176,6 +176,7 @@ extern "C" void LLVMInitializeAMDGPUTarget() {
   initializeSIFixVGPRCopiesPass(*PR);
   initializeSIFixupVectorISelPass(*PR);
   initializeSIFoldOperandsPass(*PR);
+  initializeSIInsertWaterfallPass(*PR);
   initializeSIPeepholeSDWAPass(*PR);
   initializeSIShrinkInstructionsPass(*PR);
   initializeSIOptimizeExecMaskingPreRAPass(*PR);
@@ -855,6 +856,7 @@ void GCNPassConfig::addPreRegAlloc() {
   if (LateCFGStructurize) {
     addPass(createAMDGPUMachineCFGStructurizerPass());
   }
+  addPass(createSIInsertWaterfallPass());
   addPass(createSIWholeQuadModePass());
 }
 

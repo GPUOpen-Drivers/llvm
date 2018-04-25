@@ -577,6 +577,10 @@ bool GCNTTIImpl::isAlwaysUniform(const Value *V) const {
       return false;
     case Intrinsic::amdgcn_readfirstlane:
     case Intrinsic::amdgcn_readlane:
+    case Intrinsic::amdgcn_waterfall_readfirstlane:
+    case Intrinsic::amdgcn_waterfall_begin:
+    case Intrinsic::amdgcn_waterfall_end:
+    case Intrinsic::amdgcn_waterfall_last_use:
       return true;
     }
   }
