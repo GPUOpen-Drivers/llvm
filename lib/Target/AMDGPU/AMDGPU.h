@@ -52,6 +52,7 @@ FunctionPass *createSIFixSGPRCopiesPass();
 FunctionPass *createSIBufMemMergePass();
 FunctionPass *createSIMemoryLegalizerPass();
 FunctionPass *createSIInsertWaitcntsPass();
+FunctionPass *createSIInsertWaterfallPass();
 FunctionPass *createSIPreAllocateWWMRegsPass();
 FunctionPass *createSIFormMemoryClausesPass();
 FunctionPass *createAMDGPUSimplifyLibCallsPass(const TargetOptions &,
@@ -161,6 +162,9 @@ extern char &SIInsertSkipsPassID;
 
 void initializeSIOptimizeExecMaskingPass(PassRegistry &);
 extern char &SIOptimizeExecMaskingID;
+
+void initializeSIInsertWaterfallPass(PassRegistry &);
+extern char &SIInsertWaterfallID;
 
 void initializeSIPreAllocateWWMRegsPass(PassRegistry &);
 extern char &SIPreAllocateWWMRegsID;
