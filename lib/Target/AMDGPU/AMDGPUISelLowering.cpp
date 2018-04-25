@@ -724,6 +724,8 @@ bool AMDGPUTargetLowering::isSDNodeAlwaysUniform(const SDNode * N) const {
         return false;
         case Intrinsic::amdgcn_readfirstlane:
         case Intrinsic::amdgcn_readlane:
+        case Intrinsic::amdgcn_waterfall_readfirstlane:
+        case Intrinsic::amdgcn_waterfall_begin:
           return true;
       }
     }

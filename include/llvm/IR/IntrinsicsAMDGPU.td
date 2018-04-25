@@ -1394,6 +1394,43 @@ def int_amdgcn_set_inactive :
              LLVMMatchType<0>], // value for the inactive lanes to take
             [IntrNoMem, IntrConvergent]>;
 
+// Waterfall intrinics used to tag a region as requiring waterfall loops to
+// transform VGPR values into SGPR values in a loop
+// Best case (uniform index in VGPR) the loop will execute once, worst case (all
+// values in the index are different) the loop will execute wave-size times.
+// There is a requirement that all three intrinsics are present.
+// There is also a requirement that all three intrinsics are contained in a
+// single block.
+// TODO: extend the support to allow spanning multiple blocks
+
+// Set of intrinsics to allow for non-uniform control by dictating access via
+// waterfall style code
+def int_amdgcn_waterfall_begin :
+    Intrinsic<[llvm_anyint_ty],  // Returns sgpr token
+            [llvm_i32_ty],       // VGPR index for waterfall
+            [IntrNoMem, IntrConvergent]>;
+
+// Often the index from begin will be used as the readfirstlane value from
+// waterfall code - however, this isn't always the case. The readfirstlane style
+// intrinsic is required to be used, but often is a no-op if the index is the
+// thing that is used
+def int_amdgcn_waterfall_readfirstlane :
+    Intrinsic<[llvm_any_ty],     // Returns any value
+              [llvm_i32_ty,      // Token from begin
+               llvm_any_ty],     // VGPR value to be used in readfirstlane
+              [IntrNoMem, IntrConvergent]>;
+
+// Effectively a no-op, but this intrinsic is used to indicate the end of the
+// region for waterfall by tagging a value as the end of the section
+// Waterfall will happen for all values dependent on the begin until the end
+// intrinsic is reached
+// To enable waterfall, all three intrinsics
+def int_amdgcn_waterfall_end :
+    Intrinsic<[llvm_any_ty],     // Returns VGPR value
+              [llvm_i32_ty,      // Token from begin
+               llvm_any_ty],     // VGPR Value
+              [IntrNoMem, IntrConvergent]>;
+
 //===----------------------------------------------------------------------===//
 // CI+ Intrinsics
 //===----------------------------------------------------------------------===//
