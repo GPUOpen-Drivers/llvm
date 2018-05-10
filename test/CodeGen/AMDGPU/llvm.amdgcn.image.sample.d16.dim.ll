@@ -10,6 +10,17 @@ main_body:
   ret half %tex
 }
 
+; GCN-LABEL: {{^}}image_sample_2d_f16_tfe:
+; GCN: v_mov_b32_e32 v[[VTFE:[0-9]+]], 0
+; PACKED: image_sample v[{{[0-9]+}}:[[VTFE]]], v[0:1], s[0:7], s[8:11] dmask:0x1 tfe d16{{$}}
+; UNPACKED: image_sample v[{{[0-9]+:[0-9]+}}], v[0:1], s[0:7], s[8:11] dmask:0x1 tfe d16{{$}}
+define amdgpu_ps <2 x float> @image_sample_2d_f16_tfe(<8 x i32> inreg %rsrc, <4 x i32> inreg %samp, float %s, float %t) {
+main_body:
+  %tex = call <4 x half> @llvm.amdgcn.image.sample.2d.v4f16.f32(i32 1, float %s, float %t, <8 x i32> %rsrc, <4 x i32> %samp, i1 false, i32 1, i32 0)
+  %r = bitcast <4 x half> %tex to <2 x float>
+  ret <2 x float> %r
+}
+
 ; GCN-LABEL: {{^}}image_sample_c_d_1d_v2f16:
 ; UNPACKED: image_sample_c_d v[0:1], v[0:3], s[0:7], s[8:11] dmask:0x3 d16{{$}}
 ; PACKED: image_sample_c_d v0, v[0:3], s[0:7], s[8:11] dmask:0x3 d16{{$}}
@@ -31,6 +42,7 @@ main_body:
 }
 
 declare half @llvm.amdgcn.image.sample.2d.f16.f32(i32, float, float, <8 x i32>, <4 x i32>, i1, i32, i32) #1
+declare <4 x half> @llvm.amdgcn.image.sample.2d.v4f16.f32(i32, float, float, <8 x i32>, <4 x i32>, i1, i32, i32) #1
 declare <2 x half> @llvm.amdgcn.image.sample.c.d.1d.v2f16.f32.f32(i32, float, float, float, float, <8 x i32>, <4 x i32>, i1, i32, i32) #1
 declare <4 x half> @llvm.amdgcn.image.sample.b.2d.v4f16.f32.f32(i32, float, float, float, <8 x i32>, <4 x i32>, i1, i32, i32) #1
 

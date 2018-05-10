@@ -9,12 +9,39 @@ main_body:
   ret <4 x float> %v
 }
 
+; GCN-LABEL: {{^}}load_1d_tfe:
+; GCN: v_mov_b32_e32 v4, 0
+; GCN: image_load v[0:7], v0, s[0:7] dmask:0xf unorm tfe{{$}}
+define amdgpu_ps <8 x float> @load_1d_tfe(<8 x i32> inreg %rsrc, i32 %s) {
+main_body:
+  %v = call <8 x float> @llvm.amdgcn.image.load.1d.v8f32.i32(i32 15, i32 %s, <8 x i32> %rsrc, i32 1, i32 0)
+  ret <8 x float> %v
+}
+
+; GCN-LABEL: {{^}}load_1d_lwe:
+; GCN: v_mov_b32_e32 v4, 0
+; GCN: image_load v[0:7], v0, s[0:7] dmask:0xf unorm lwe{{$}}
+define amdgpu_ps <8 x float> @load_1d_lwe(<8 x i32> inreg %rsrc, i32 %s) {
+main_body:
+  %v = call <8 x float> @llvm.amdgcn.image.load.1d.v8f32.i32(i32 15, i32 %s, <8 x i32> %rsrc, i32 2, i32 0)
+  ret <8 x float> %v
+}
+
 ; GCN-LABEL: {{^}}load_2d:
 ; GCN: image_load v[0:3], v[0:1], s[0:7] dmask:0xf unorm{{$}}
 define amdgpu_ps <4 x float> @load_2d(<8 x i32> inreg %rsrc, i32 %s, i32 %t) {
 main_body:
   %v = call <4 x float> @llvm.amdgcn.image.load.2d.v4f32.i32(i32 15, i32 %s, i32 %t, <8 x i32> %rsrc, i32 0, i32 0)
   ret <4 x float> %v
+}
+
+; GCN-LABEL: {{^}}load_2d_tfe:
+; GCN: v_mov_b32_e32 v4, 0
+; GCN: image_load v[0:7], v[0:1], s[0:7] dmask:0xf unorm tfe{{$}}
+define amdgpu_ps <8 x float> @load_2d_tfe(<8 x i32> inreg %rsrc, i32 %s, i32 %t) {
+main_body:
+  %v = call <8 x float> @llvm.amdgcn.image.load.2d.v8f32.i32(i32 15, i32 %s, i32 %t, <8 x i32> %rsrc, i32 1, i32 0)
+  ret <8 x float> %v
 }
 
 ; GCN-LABEL: {{^}}load_3d:
@@ -25,12 +52,30 @@ main_body:
   ret <4 x float> %v
 }
 
+; GCN-LABEL: {{^}}load_3d_tfe_lwe:
+; GCN: v_mov_b32_e32 v4, 0
+; GCN: image_load v[0:7], v[0:3], s[0:7] dmask:0xf unorm tfe lwe{{$}}
+define amdgpu_ps <8 x float> @load_3d_tfe_lwe(<8 x i32> inreg %rsrc, i32 %s, i32 %t, i32 %r) {
+main_body:
+  %v = call <8 x float> @llvm.amdgcn.image.load.3d.v8f32.i32(i32 15, i32 %s, i32 %t, i32 %r, <8 x i32> %rsrc, i32 3, i32 0)
+  ret <8 x float> %v
+}
+
 ; GCN-LABEL: {{^}}load_cube:
 ; GCN: image_load v[0:3], v[0:3], s[0:7] dmask:0xf unorm da{{$}}
 define amdgpu_ps <4 x float> @load_cube(<8 x i32> inreg %rsrc, i32 %s, i32 %t, i32 %slice) {
 main_body:
   %v = call <4 x float> @llvm.amdgcn.image.load.cube.v4f32.i32(i32 15, i32 %s, i32 %t, i32 %slice, <8 x i32> %rsrc, i32 0, i32 0)
   ret <4 x float> %v
+}
+
+; GCN-LABEL: {{^}}load_cube_lwe:
+; GCN: v_mov_b32_e32 v4, 0
+; GCN: image_load v[0:7], v[0:3], s[0:7] dmask:0xf unorm lwe da{{$}}
+define amdgpu_ps <8 x float> @load_cube_lwe(<8 x i32> inreg %rsrc, i32 %s, i32 %t, i32 %slice) {
+main_body:
+  %v = call <8 x float> @llvm.amdgcn.image.load.cube.v8f32.i32(i32 15, i32 %s, i32 %t, i32 %slice, <8 x i32> %rsrc, i32 2, i32 0)
+  ret <8 x float> %v
 }
 
 ; GCN-LABEL: {{^}}load_1darray:
@@ -41,12 +86,30 @@ main_body:
   ret <4 x float> %v
 }
 
+; GCN-LABEL: {{^}}load_1darray_tfe:
+; GCN: v_mov_b32_e32 v4, 0
+; GCN: image_load v[0:7], v[0:1], s[0:7] dmask:0xf unorm tfe da{{$}}
+define amdgpu_ps <8 x float> @load_1darray_tfe(<8 x i32> inreg %rsrc, i32 %s, i32 %slice) {
+main_body:
+  %v = call <8 x float> @llvm.amdgcn.image.load.1darray.v8f32.i32(i32 15, i32 %s, i32 %slice, <8 x i32> %rsrc, i32 1, i32 0)
+  ret <8 x float> %v
+}
+
 ; GCN-LABEL: {{^}}load_2darray:
 ; GCN: image_load v[0:3], v[0:3], s[0:7] dmask:0xf unorm da{{$}}
 define amdgpu_ps <4 x float> @load_2darray(<8 x i32> inreg %rsrc, i32 %s, i32 %t, i32 %slice) {
 main_body:
   %v = call <4 x float> @llvm.amdgcn.image.load.2darray.v4f32.i32(i32 15, i32 %s, i32 %t, i32 %slice, <8 x i32> %rsrc, i32 0, i32 0)
   ret <4 x float> %v
+}
+
+; GCN-LABEL: {{^}}load_2darray_lwe:
+; GCN: v_mov_b32_e32 v4, 0
+; GCN: image_load v[0:7], v[0:3], s[0:7] dmask:0xf unorm lwe da{{$}}
+define amdgpu_ps <8 x float> @load_2darray_lwe(<8 x i32> inreg %rsrc, i32 %s, i32 %t, i32 %slice) {
+main_body:
+  %v = call <8 x float> @llvm.amdgcn.image.load.2darray.v8f32.i32(i32 15, i32 %s, i32 %t, i32 %slice, <8 x i32> %rsrc, i32 2, i32 0)
+  ret <8 x float> %v
 }
 
 ; GCN-LABEL: {{^}}load_2dmsaa:
@@ -57,12 +120,30 @@ main_body:
   ret <4 x float> %v
 }
 
+; GCN-LABEL: {{^}}load_2dmsaa_both:
+; GCN: v_mov_b32_e32 v4, 0
+; GCN: image_load v[0:7], v[0:3], s[0:7] dmask:0xf unorm tfe lwe{{$}}
+define amdgpu_ps <8 x float> @load_2dmsaa_both(<8 x i32> inreg %rsrc, i32 %s, i32 %t, i32 %fragid) {
+main_body:
+  %v = call <8 x float> @llvm.amdgcn.image.load.2dmsaa.v8f32.i32(i32 15, i32 %s, i32 %t, i32 %fragid, <8 x i32> %rsrc, i32 3, i32 0)
+  ret <8 x float> %v
+}
+
 ; GCN-LABEL: {{^}}load_2darraymsaa:
 ; GCN: image_load v[0:3], v[0:3], s[0:7] dmask:0xf unorm da{{$}}
 define amdgpu_ps <4 x float> @load_2darraymsaa(<8 x i32> inreg %rsrc, i32 %s, i32 %t, i32 %slice, i32 %fragid) {
 main_body:
   %v = call <4 x float> @llvm.amdgcn.image.load.2darraymsaa.v4f32.i32(i32 15, i32 %s, i32 %t, i32 %slice, i32 %fragid, <8 x i32> %rsrc, i32 0, i32 0)
   ret <4 x float> %v
+}
+
+; GCN-LABEL: {{^}}load_2darraymsaa_tfe:
+; GCN: v_mov_b32_e32 v4, 0
+; GCN: image_load v[0:7], v[0:3], s[0:7] dmask:0xf unorm tfe da{{$}}
+define amdgpu_ps <8 x float> @load_2darraymsaa_tfe(<8 x i32> inreg %rsrc, i32 %s, i32 %t, i32 %slice, i32 %fragid) {
+main_body:
+  %v = call <8 x float> @llvm.amdgcn.image.load.2darraymsaa.v8f32.i32(i32 15, i32 %s, i32 %t, i32 %slice, i32 %fragid, <8 x i32> %rsrc, i32 1, i32 0)
+  ret <8 x float> %v
 }
 
 ; GCN-LABEL: {{^}}load_mip_1d:
@@ -73,12 +154,30 @@ main_body:
   ret <4 x float> %v
 }
 
+; GCN-LABEL: {{^}}load_mip_1d_lwe:
+; GCN: v_mov_b32_e32 v4, 0
+; GCN: image_load_mip v[0:7], v[0:1], s[0:7] dmask:0xf unorm lwe{{$}}
+define amdgpu_ps <8 x float> @load_mip_1d_lwe(<8 x i32> inreg %rsrc, i32 %s, i32 %mip) {
+main_body:
+  %v = call <8 x float> @llvm.amdgcn.image.load.mip.1d.v8f32.i32(i32 15, i32 %s, i32 %mip, <8 x i32> %rsrc, i32 2, i32 0)
+  ret <8 x float> %v
+}
+
 ; GCN-LABEL: {{^}}load_mip_2d:
 ; GCN: image_load_mip v[0:3], v[0:3], s[0:7] dmask:0xf unorm{{$}}
 define amdgpu_ps <4 x float> @load_mip_2d(<8 x i32> inreg %rsrc, i32 %s, i32 %t, i32 %mip) {
 main_body:
   %v = call <4 x float> @llvm.amdgcn.image.load.mip.2d.v4f32.i32(i32 15, i32 %s, i32 %t, i32 %mip, <8 x i32> %rsrc, i32 0, i32 0)
   ret <4 x float> %v
+}
+
+; GCN-LABEL: {{^}}load_mip_2d_tfe:
+; GCN: v_mov_b32_e32 v4, 0
+; GCN: image_load_mip v[0:7], v[0:3], s[0:7] dmask:0xf unorm tfe{{$}}
+define amdgpu_ps <8 x float> @load_mip_2d_tfe(<8 x i32> inreg %rsrc, i32 %s, i32 %t, i32 %mip) {
+main_body:
+  %v = call <8 x float> @llvm.amdgcn.image.load.mip.2d.v8f32.i32(i32 15, i32 %s, i32 %t, i32 %mip, <8 x i32> %rsrc, i32 1, i32 0)
+  ret <8 x float> %v
 }
 
 ; GCN-LABEL: {{^}}load_mip_3d:
@@ -370,16 +469,26 @@ main_body:
 }
 
 declare <4 x float> @llvm.amdgcn.image.load.1d.v4f32.i32(i32, i32, <8 x i32>, i32, i32) #1
+declare <8 x float> @llvm.amdgcn.image.load.1d.v8f32.i32(i32, i32, <8 x i32>, i32, i32) #1
 declare <4 x float> @llvm.amdgcn.image.load.2d.v4f32.i32(i32, i32, i32, <8 x i32>, i32, i32) #1
+declare <8 x float> @llvm.amdgcn.image.load.2d.v8f32.i32(i32, i32, i32, <8 x i32>, i32, i32) #1
 declare <4 x float> @llvm.amdgcn.image.load.3d.v4f32.i32(i32, i32, i32, i32, <8 x i32>, i32, i32) #1
+declare <8 x float> @llvm.amdgcn.image.load.3d.v8f32.i32(i32, i32, i32, i32, <8 x i32>, i32, i32) #1
 declare <4 x float> @llvm.amdgcn.image.load.cube.v4f32.i32(i32, i32, i32, i32, <8 x i32>, i32, i32) #1
+declare <8 x float> @llvm.amdgcn.image.load.cube.v8f32.i32(i32, i32, i32, i32, <8 x i32>, i32, i32) #1
 declare <4 x float> @llvm.amdgcn.image.load.1darray.v4f32.i32(i32, i32, i32, <8 x i32>, i32, i32) #1
+declare <8 x float> @llvm.amdgcn.image.load.1darray.v8f32.i32(i32, i32, i32, <8 x i32>, i32, i32) #1
 declare <4 x float> @llvm.amdgcn.image.load.2darray.v4f32.i32(i32, i32, i32, i32, <8 x i32>, i32, i32) #1
+declare <8 x float> @llvm.amdgcn.image.load.2darray.v8f32.i32(i32, i32, i32, i32, <8 x i32>, i32, i32) #1
 declare <4 x float> @llvm.amdgcn.image.load.2dmsaa.v4f32.i32(i32, i32, i32, i32, <8 x i32>, i32, i32) #1
+declare <8 x float> @llvm.amdgcn.image.load.2dmsaa.v8f32.i32(i32, i32, i32, i32, <8 x i32>, i32, i32) #1
 declare <4 x float> @llvm.amdgcn.image.load.2darraymsaa.v4f32.i32(i32, i32, i32, i32, i32, <8 x i32>, i32, i32) #1
+declare <8 x float> @llvm.amdgcn.image.load.2darraymsaa.v8f32.i32(i32, i32, i32, i32, i32, <8 x i32>, i32, i32) #1
 
 declare <4 x float> @llvm.amdgcn.image.load.mip.1d.v4f32.i32(i32, i32, i32, <8 x i32>, i32, i32) #1
 declare <4 x float> @llvm.amdgcn.image.load.mip.2d.v4f32.i32(i32, i32, i32, i32, <8 x i32>, i32, i32) #1
+declare <8 x float> @llvm.amdgcn.image.load.mip.1d.v8f32.i32(i32, i32, i32, <8 x i32>, i32, i32) #1
+declare <8 x float> @llvm.amdgcn.image.load.mip.2d.v8f32.i32(i32, i32, i32, i32, <8 x i32>, i32, i32) #1
 declare <4 x float> @llvm.amdgcn.image.load.mip.3d.v4f32.i32(i32, i32, i32, i32, i32, <8 x i32>, i32, i32) #1
 declare <4 x float> @llvm.amdgcn.image.load.mip.cube.v4f32.i32(i32, i32, i32, i32, i32, <8 x i32>, i32, i32) #1
 declare <4 x float> @llvm.amdgcn.image.load.mip.1darray.v4f32.i32(i32, i32, i32, i32, <8 x i32>, i32, i32) #1

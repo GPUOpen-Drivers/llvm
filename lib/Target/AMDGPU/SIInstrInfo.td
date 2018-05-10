@@ -2039,7 +2039,7 @@ def getMaskedMIMGOp1 : InstrMapping {
   let RowFields = ["Op"];
   let ColFields = ["Channels"];
   let KeyCol = ["1"];
-  let ValueCols = [["2"], ["3"], ["4"] ];
+  let ValueCols = [["2"], ["3"], ["4"], ["5"] ];
 }
 
 def getMaskedMIMGOp2 : InstrMapping {
@@ -2047,7 +2047,7 @@ def getMaskedMIMGOp2 : InstrMapping {
   let RowFields = ["Op"];
   let ColFields = ["Channels"];
   let KeyCol = ["2"];
-  let ValueCols = [["1"], ["3"], ["4"] ];
+  let ValueCols = [["1"], ["3"], ["4"], ["5"] ];
 }
 
 def getMaskedMIMGOp3 : InstrMapping {
@@ -2055,7 +2055,7 @@ def getMaskedMIMGOp3 : InstrMapping {
   let RowFields = ["Op"];
   let ColFields = ["Channels"];
   let KeyCol = ["3"];
-  let ValueCols = [["1"], ["2"], ["4"] ];
+  let ValueCols = [["1"], ["2"], ["4"], ["5"] ];
 }
 
 def getMaskedMIMGOp4 : InstrMapping {
@@ -2063,7 +2063,15 @@ def getMaskedMIMGOp4 : InstrMapping {
   let RowFields = ["Op"];
   let ColFields = ["Channels"];
   let KeyCol = ["4"];
-  let ValueCols = [["1"], ["2"], ["3"] ];
+  let ValueCols = [["1"], ["2"], ["3"], ["5"] ];
+}
+
+def getMaskedMIMGOp5 : InstrMapping {
+  let FilterClass = "MIMG_Mask";
+  let RowFields = ["Op"];
+  let ColFields = ["Channels"];
+  let KeyCol = ["5"];
+  let ValueCols = [["1"], ["2"], ["3"], ["4"] ];
 }
 
 def getMIMGAtomicOp1 : InstrMapping {

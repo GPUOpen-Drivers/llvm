@@ -179,7 +179,7 @@ main_body:
 define amdgpu_ps void @image_load_mmo(float addrspace(3)* %lds, <2 x i32> %c, <8 x i32> inreg %rsrc) #0 {
 bb:
   store float 0.000000e+00, float addrspace(3)* %lds
-  %tex = call float @llvm.amdgcn.image.load.f32.v2i32.v8i32(<2 x i32> %c, <8 x i32> %rsrc, i32 15, i1 false, i1 false, i1 false, i1 false)
+  %tex = call float @llvm.amdgcn.image.load.f32.v2i32.v8i32(<2 x i32> %c, <8 x i32> %rsrc, i32 1, i1 false, i1 false, i1 false, i1 false)
   %tmp2 = getelementptr float, float addrspace(3)* %lds, i32 4
   store float 0.000000e+00, float addrspace(3)* %tmp2
   call void @llvm.amdgcn.exp.f32(i32 0, i32 15, float %tex, float %tex, float %tex, float %tex, i1 true, i1 true) #0
