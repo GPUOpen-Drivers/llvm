@@ -110,6 +110,8 @@ static inline Channels indexToChannel(unsigned Channel) {
     return AMDGPU::Channels_3;
   case 4:
     return AMDGPU::Channels_4;
+  case 5:
+    return AMDGPU::Channels_5;
   default:
     llvm_unreachable("invalid MIMG channel");
   }
@@ -147,6 +149,8 @@ int getMaskedMIMGOp(const MCInstrInfo &MII, unsigned Opc, unsigned NewChannels) 
     return AMDGPU::getMaskedMIMGOp3(Opc, Channel);
   case 4:
     return AMDGPU::getMaskedMIMGOp4(Opc, Channel);
+  case 5:
+    return AMDGPU::getMaskedMIMGOp5(Opc, Channel);
   default:
     llvm_unreachable("invalid MIMG channel");
   }

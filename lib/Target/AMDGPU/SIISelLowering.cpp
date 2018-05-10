@@ -7416,6 +7416,10 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
   unsigned DmaskIdx = (Node->getNumOperands() - Node->getNumValues() == 9) ? 2 : 3;
   unsigned OldDmask = Node->getConstantOperandVal(DmaskIdx);
   unsigned NewDmask = 0;
+  unsigned TFEIdx = DmaskIdx + 5;
+  unsigned LWEIdx = DmaskIdx + 6;
+  unsigned UsesTFC = (Node->getConstantOperandVal(TFEIdx) ||
+                      Node->getConstantOperandVal(LWEIdx)) ? 1 : 0;
   bool HasChain = Node->getNumValues() > 1;
 
   if (OldDmask == 0) {
@@ -7463,9 +7467,15 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
 
   unsigned BitsSet = countPopulation(NewDmask);
 
+  // Check for TFE or LWE - increase the number of channels by one to account
+  // for the extra return value
+  // This will need adjustment for D16 if this is also included in
+  // adjustWriteMask (this function) but at present D16 are excluded.
+  unsigned NewChannels = BitsSet + UsesTFC;
+
   const SIInstrInfo *TII = getSubtarget()->getInstrInfo();
   int NewOpcode = AMDGPU::getMaskedMIMGOp(*TII,
-                                          Node->getMachineOpcode(), BitsSet);
+                                          Node->getMachineOpcode(), NewChannels);
   assert(NewOpcode != -1 &&
          NewOpcode != static_cast<int>(Node->getMachineOpcode()) &&
          "failed to find equivalent MIMG op");

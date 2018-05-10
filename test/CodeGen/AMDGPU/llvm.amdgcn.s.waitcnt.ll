@@ -24,7 +24,7 @@ define amdgpu_ps void @test1(<8 x i32> inreg %rsrc, <4 x float> %d0, <4 x float>
 ; CHECK-NEXT: s_waitcnt vmcnt(0) expcnt(0){{$}}
 ; CHECK-NEXT: image_store
 define amdgpu_ps void @test2(<8 x i32> inreg %rsrc, i32 %c) {
-  %t = call <4 x float> @llvm.amdgcn.image.load.v4f32.i32.v8i32(i32 %c, <8 x i32> %rsrc, i32 15, i1 0, i1 0, i1 0, i1 0)
+  %t = call <4 x float> @llvm.amdgcn.image.load.v4f32.i32.v8i32(i32 %c, <8 x i32> %rsrc, i32 1, i1 0, i1 0, i1 0, i1 0)
   call void @llvm.amdgcn.s.waitcnt(i32 3840) ; 0xf00
   %c.1 = mul i32 %c, 2
   call void @llvm.amdgcn.image.store.v4f32.i32.v8i32(<4 x float> %t, i32 %c.1, <8 x i32> %rsrc, i32 15, i1 0, i1 0, i1 0, i1 0)

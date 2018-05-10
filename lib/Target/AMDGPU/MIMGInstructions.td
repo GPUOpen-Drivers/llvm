@@ -62,6 +62,8 @@ multiclass MIMG_NoSampler_Src_Helper_Helper <bits<7> op, string asm,
                             MIMG_Mask<asm#"_V3"#suffix, channels>;
   def NAME # _V4 # suffix : MIMG_NoSampler_Helper <op, asm, dst_rc, VReg_128, d16_bit>,
                             MIMG_Mask<asm#"_V4"#suffix, channels>;
+  def NAME # _V8 # suffix : MIMG_NoSampler_Helper <op, asm, dst_rc, VReg_256, d16_bit>,
+                            MIMG_Mask<asm#"_V8"#suffix, channels>;
 }
 
 multiclass MIMG_NoSampler_Src_Helper <bits<7> op, string asm,
@@ -85,6 +87,7 @@ multiclass MIMG_NoSampler <bits<7> op, string asm> {
   defm _V2 : MIMG_NoSampler_Src_Helper <op, asm, VReg_64, 2>;
   defm _V3 : MIMG_NoSampler_Src_Helper <op, asm, VReg_96, 3>;
   defm _V4 : MIMG_NoSampler_Src_Helper <op, asm, VReg_128, 4>;
+  defm _V8 : MIMG_NoSampler_Src_Helper <op, asm, VReg_256, 5>;
 }
 
 multiclass MIMG_PckNoSampler <bits<7> op, string asm> {
@@ -149,6 +152,7 @@ multiclass MIMG_Store <bits<7> op, string asm> {
   defm _V2 : MIMG_Store_Addr_Helper <op, asm, VReg_64, 2>;
   defm _V3 : MIMG_Store_Addr_Helper <op, asm, VReg_96, 3>;
   defm _V4 : MIMG_Store_Addr_Helper <op, asm, VReg_128, 4>;
+  defm _V8 : MIMG_Store_Addr_Helper <op, asm, VReg_256, 5>;
 }
 
 multiclass MIMG_PckStore <bits<7> op, string asm> {
@@ -298,6 +302,7 @@ multiclass MIMG_Sampler <bits<7> op, string asm, bit wqm=0> {
   defm _V2 : MIMG_Sampler_Src_Helper<op, asm, VReg_64, 2, wqm>;
   defm _V3 : MIMG_Sampler_Src_Helper<op, asm, VReg_96, 3, wqm>;
   defm _V4 : MIMG_Sampler_Src_Helper<op, asm, VReg_128, 4, wqm>;
+  defm _V8 : MIMG_Sampler_Src_Helper<op, asm, VReg_256, 5, wqm>;
 }
 
 multiclass MIMG_Sampler_WQM <bits<7> op, string asm> : MIMG_Sampler<op, asm, 1>;
@@ -518,6 +523,19 @@ class makeRegSequence<ValueType vt, RegisterClass RC, list<string> names> {
                                           [name, ?]))>).lhs);
 }
 
+// Given the ValueType passed in calculate the dword to be written
+class getTCFDword<ValueType VT> {
+  int SubIdx = !if(!eq(!cast<string>(VT), "v2f32"), 1,
+               !if(!eq(!cast<string>(VT), "v4f32"), 2,
+               !if(!eq(!cast<string>(VT), "v8f32"), 5, ?)));
+  int NumDwords = !if(!eq(!cast<string>(VT), "v2f32"), 2,
+                  !if(!eq(!cast<string>(VT), "v4f32"), 4,
+                  !if(!eq(!cast<string>(VT), "v8f32"), 8, ?)));
+  RegisterClass VReg = !if(!eq(!cast<string>(VT), "v2f32"), VReg_64,
+                       !if(!eq(!cast<string>(VT), "v4f32"), VReg_128,
+                       !if(!eq(!cast<string>(VT), "v8f32"), VReg_256, ?)));
+}
+
 class ImageDimPattern<AMDGPUImageDimIntrinsic I,
                       string dop, ValueType dty,
                       string suffix = ""> : GCNPat<(undef), (undef)> {
@@ -559,12 +577,15 @@ class ImageDimPattern<AMDGPUImageDimIntrinsic I,
     !if(I.P.IsAtomic, (MI 1),
                       (MI (bitextract_imm<0> $cachepolicy)));
 
+  getTCFDword DstDwords = getTCFDword<dty>;
+
   dag MatchIntrinsic = !con(MatchDataDag,
                             MatchAddrDag,
                             (I v8i32:$rsrc),
                             MatchSamplerDag,
-                            (I 0/*texfailctrl*/,
+                            (I i32:$texfailctrl,
                                i32:$cachepolicy));
+
   let PatternToMatch =
     !if(!size(I.RetTypes), (dty MatchIntrinsic), MatchIntrinsic);
 
@@ -579,8 +600,8 @@ class ImageDimPattern<AMDGPUImageDimIntrinsic I,
          GenGLC,
          (MI (bitextract_imm<1> $cachepolicy),
              0, /* r128 */
-             0, /* tfe */
-             0 /*(as_i1imm $lwe)*/,
+             (bitextract_imm<0> $texfailctrl), /* tfe */
+             (bitextract_imm<1> $texfailctrl), /* lwe */
              { I.P.Dim.DA }));
   let ResultInstrs = [
     !if(IsCmpSwap, (EXTRACT_SUBREG ImageInstruction, sub0), ImageInstruction)
@@ -592,6 +613,7 @@ foreach intr = !listconcat(AMDGPUImageDimIntrinsics,
   def intr#_pat_v1 : ImageDimPattern<intr, "_V1", f32>;
   def intr#_pat_v2 : ImageDimPattern<intr, "_V2", v2f32>;
   def intr#_pat_v4 : ImageDimPattern<intr, "_V4", v4f32>;
+  def intr#_pat_v8 : ImageDimPattern<intr, "_V8", v8f32>;
 }
 
 // v2f16 and v4f16 are used as data types to signal that D16 should be used.
@@ -698,6 +720,7 @@ multiclass ImageSamplePatterns<SDPatternOperator name, string opcode> {
   defm : ImageSampleDataPatterns<name, !cast<string>(opcode # _V1), f32>;
   defm : ImageSampleDataPatterns<name, !cast<string>(opcode # _V2), v2f32>;
   defm : ImageSampleDataPatterns<name, !cast<string>(opcode # _V4), v4f32>;
+  defm : ImageSampleDataPatterns<name, !cast<string>(opcode # _V8), v8f32>;
 
   let SubtargetPredicate = HasUnpackedD16VMem in {
     defm : ImageSampleDataPatterns<name, !cast<string>(opcode # _V1), f16, "_D16_gfx80">;
