@@ -256,21 +256,20 @@ main_body:
 
 ; GCN-LABEL: {{^}}smrd_imm_merge_m0:
 ;
-; SICIVI: s_buffer_load_dwordx2
-; SICIVI: s_mov_b32 m0
-; SICIVI_DAG: v_interp_p1_f32
-; SICIVI_DAG: v_interp_p1_f32
-; SICIVI_DAG: v_interp_p1_f32
-; SICIVI_DAG: v_interp_p2_f32
-; SICIVI_DAG: v_interp_p2_f32
-; SICIVI_DAG: v_interp_p2_f32
+; GCN: s_buffer_load_dwordx2
+; GCN: s_mov_b32 m0
+; GCN_DAG: v_interp_p1_f32
+; GCN_DAG: v_interp_p1_f32
+; GCN_DAG: v_interp_p1_f32
+; GCN_DAG: v_interp_p2_f32
+; GCN_DAG: v_interp_p2_f32
+; GCN_DAG: v_interp_p2_f32
 ; SICIVI: s_mov_b32 m0
 ; SICIVI: v_movrels_b32_e32
+; GFX9: s_set_gpr_idx_on
+; GFX9: v_mov_b32
+; GFX9: s_set_gpr_idx_off
 ;
-; Merging is still thwarted on GFX9 due to s_set_gpr_idx
-;
-; GFX9: s_buffer_load_dword
-; GFX9: s_buffer_load_dword
 define amdgpu_ps float @smrd_imm_merge_m0(<4 x i32> inreg %desc, i32 inreg %prim, float %u, float %v) #0 {
 main_body:
   %idx1.f = call float @llvm.SI.load.const.v4i32(<4 x i32> %desc, i32 0)
