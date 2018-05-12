@@ -797,7 +797,7 @@ def int_amdgcn_buffer_load_ubyte : Intrinsic <
    llvm_i32_ty,       // offset(SGPR/VGPR/imm)
    llvm_i1_ty,        // glc(imm)
    llvm_i1_ty],       // slc(imm)
-  [], "", [SDNPMemOperand]>,
+  [IntrReadMem], "", [SDNPMemOperand]>,
   AMDGPURsrcIntrinsic<0>;
 
 def int_amdgcn_buffer_load_ushort : Intrinsic <
@@ -807,7 +807,7 @@ def int_amdgcn_buffer_load_ushort : Intrinsic <
    llvm_i32_ty,       // offset(SGPR/VGPR/imm)
    llvm_i1_ty,        // glc(imm)
    llvm_i1_ty],       // slc(imm)
-  [], "", [SDNPMemOperand]>,
+  [IntrReadMem], "", [SDNPMemOperand]>,
   AMDGPURsrcIntrinsic<0>;
 
 class AMDGPUBufferLoad : Intrinsic <
