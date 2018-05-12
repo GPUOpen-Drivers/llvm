@@ -4,7 +4,7 @@
 ; This test will provoke a subrange join failure without a fix for PR35374
 ; As such we only test for successful simple-register-coalescing
 ;
-; GCN: S_CBRANCH_SCC1 %bb.6{{.*}}
+; GCN: S_CBRANCH_SCC1
 
 ; Function Attrs: nounwind
 define amdgpu_cs void @main() local_unnamed_addr #0 {
