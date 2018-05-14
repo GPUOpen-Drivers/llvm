@@ -7458,13 +7458,14 @@ static unsigned SubIdx2Lane(unsigned Idx) {
   case AMDGPU::sub1: return 1;
   case AMDGPU::sub2: return 2;
   case AMDGPU::sub3: return 3;
+  case AMDGPU::sub4: return 4; // This might be returned when using TFE/LWE
   }
 }
 
 /// Adjust the writemask of MIMG instructions
 SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
                                           SelectionDAG &DAG) const {
-  SDNode *Users[4] = { nullptr };
+  SDNode *Users[5] = { nullptr };
   unsigned Lane = 0;
   unsigned DmaskIdx = (Node->getNumOperands() - Node->getNumValues() == 9) ? 2 : 3;
   unsigned OldDmask = Node->getConstantOperandVal(DmaskIdx);
@@ -7473,11 +7474,19 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
   unsigned LWEIdx = DmaskIdx + 6;
   unsigned UsesTFC = (Node->getConstantOperandVal(TFEIdx) ||
                       Node->getConstantOperandVal(LWEIdx)) ? 1 : 0;
+  unsigned TFCLane = 0;
   bool HasChain = Node->getNumValues() > 1;
 
   if (OldDmask == 0) {
     // These are folded out, but on the chance it happens don't assert.
     return Node;
+  }
+
+
+  // Work out which is the TFE/LWE lane if that is enabled.
+  if (UsesTFC) {
+    unsigned OldBitsSet = countPopulation(OldDmask);
+    TFCLane = OldBitsSet;
   }
 
   // Try to figure out the used register components
@@ -7499,22 +7508,27 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
     // set, etc.
     Lane = SubIdx2Lane(I->getConstantOperandVal(1));
 
-    // Set which texture component corresponds to the lane.
-    unsigned Comp;
-    for (unsigned i = 0, Dmask = OldDmask; i <= Lane; i++) {
-      Comp = countTrailingZeros(Dmask);
-      Dmask &= ~(1 << Comp);
+    // Check if the use is for the TFE/LWE generated result at VGPRn+1.
+    if (UsesTFC && Lane == TFCLane) {
+      Users[Lane] = *I;
+    } else {
+      // Set which texture component corresponds to the lane.
+      unsigned Comp;
+      for (unsigned i = 0, Dmask = OldDmask; i <= Lane; i++) {
+        Comp = countTrailingZeros(Dmask);
+        Dmask &= ~(1 << Comp);
+      }
+
+      // Abort if we have more than one user per component.
+      if (Users[Lane])
+        return Node;
+
+      Users[Lane] = *I;
+      NewDmask |= 1 << Comp;
     }
-
-    // Abort if we have more than one user per component
-    if (Users[Lane])
-      return Node;
-
-    Users[Lane] = *I;
-    NewDmask |= 1 << Comp;
   }
 
-  // Abort if there's no change
+  // Abort if there's no change.
   if (NewDmask == OldDmask)
     return Node;
 
@@ -7541,8 +7555,9 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
 
   MVT SVT = Node->getValueType(0).getVectorElementType().getSimpleVT();
 
-  MVT ResultVT = BitsSet == 1 ?
-    SVT : MVT::getVectorVT(SVT, BitsSet == 3 ? 4 : BitsSet);
+  MVT ResultVT = NewChannels == 1 ?
+    SVT : MVT::getVectorVT(SVT, NewChannels == 3 ? 4 :
+                           NewChannels == 5 ? 8 : NewChannels);
   SDVTList NewVTList = HasChain ?
     DAG.getVTList(ResultVT, MVT::Other) : DAG.getVTList(ResultVT);
 
@@ -7556,7 +7571,7 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
     DAG.ReplaceAllUsesOfValueWith(SDValue(Node, 1), SDValue(NewNode, 1));
   }
 
-  if (BitsSet == 1) {
+  if (NewChannels == 1) {
     assert(Node->hasNUsesOfValue(1, 0));
     SDNode *Copy = DAG.getMachineNode(TargetOpcode::COPY,
                                       SDLoc(Node), Users[Lane]->getValueType(0),
@@ -7566,7 +7581,7 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
   }
 
   // Update the users of the node with the new indices
-  for (unsigned i = 0, Idx = AMDGPU::sub0; i < 4; ++i) {
+  for (unsigned i = 0, Idx = AMDGPU::sub0; i < 5; ++i) {
     SDNode *User = Users[i];
     if (!User)
       continue;
@@ -7579,6 +7594,7 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
     case AMDGPU::sub0: Idx = AMDGPU::sub1; break;
     case AMDGPU::sub1: Idx = AMDGPU::sub2; break;
     case AMDGPU::sub2: Idx = AMDGPU::sub3; break;
+    case AMDGPU::sub3: Idx = AMDGPU::sub4; break;
     }
   }
 

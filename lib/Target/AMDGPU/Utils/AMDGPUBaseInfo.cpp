@@ -129,6 +129,8 @@ static unsigned rcToChannels(unsigned RCID) {
     return 3;
   case AMDGPU::VReg_128RegClassID:
     return 4;
+  case AMDGPU::VReg_256RegClassID:
+    return 5;
   default:
     llvm_unreachable("invalid MIMG register class");
   }
