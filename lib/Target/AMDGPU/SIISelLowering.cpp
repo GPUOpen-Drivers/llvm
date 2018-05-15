@@ -961,7 +961,9 @@ bool SITargetLowering::isLegalAddressingMode(const DataLayout &DL,
     // will use a MUBUF load.
     // FIXME?: We also need to do this if unaligned, but we don't know the
     // alignment here.
-    if (DL.getTypeStoreSize(Ty) < 4)
+    // In the case where the pointer is to void make the conservative
+    // assumption.
+    if (Ty->isVoidTy() || DL.getTypeStoreSize(Ty) < 4)
       return isLegalGlobalAddressingMode(AM);
 
     if (Subtarget->getGeneration() == SISubtarget::SOUTHERN_ISLANDS) {
