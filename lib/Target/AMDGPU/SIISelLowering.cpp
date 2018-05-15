@@ -210,6 +210,7 @@ SITargetLowering::SITargetLowering(const TargetMachine &TM,
 
   setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::v2f16, Custom);
   setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::v4f16, Custom);
+  setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::v8f16, Custom);
   setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::Other, Custom);
 
   setOperationAction(ISD::INTRINSIC_VOID, MVT::Other, Custom);
@@ -3734,11 +3735,12 @@ SDValue SITargetLowering::lowerIntrinsicWChain_IllegalReturnType(SDValue Op,
                                      SDValue &Chain, SelectionDAG &DAG) const {
   EVT LoadVT = Op.getValueType();
   // TODO: handle v3f16.
-  if (LoadVT != MVT::v2f16 && LoadVT != MVT::v4f16)
+  if (LoadVT != MVT::v2f16 && LoadVT != MVT::v4f16 && LoadVT != MVT::v8f16)
     return SDValue();
 
   bool Unpacked = Subtarget->hasUnpackedD16VMem();
-  EVT UnpackedLoadVT = (LoadVT == MVT::v2f16) ? MVT::v2i32 : MVT::v4i32;
+  EVT UnpackedLoadVT = (LoadVT == MVT::v2f16) ? MVT::v2i32 :
+                       (LoadVT == MVT::v4f16) ? MVT::v4i32 : MVT::v8i32;
   EVT EquivLoadVT = Unpacked ? UnpackedLoadVT :
                                getEquivalentMemType(*DAG.getContext(), LoadVT);
   // Change from v4f16/v2f16 to EquivLoadVT.

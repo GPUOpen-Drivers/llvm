@@ -98,11 +98,8 @@ bool SIAddIMGInit::runOnMachineFunction(MachineFunction &MF) {
 
           const DebugLoc &DL = MI.getDebugLoc();
 
-          MachineOperand *dst = TII->getNamedOperand(MI, AMDGPU::OpName::vdata);
           int dstIdx = AMDGPU::getNamedOperandIdx(MI.getOpcode(),
                                                   AMDGPU::OpName::vdata);
-          assert(dst && dst->isReg() &&
-                 "Expecting dst operand to be a register");
 
           // Calculate which dword we have to initialize to 0.
           MachineOperand *MO_Dmask =

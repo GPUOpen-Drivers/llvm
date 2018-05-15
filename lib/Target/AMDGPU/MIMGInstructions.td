@@ -628,6 +628,7 @@ multiclass ImageDimD16Helper<AMDGPUImageDimIntrinsic I,
     def _unpacked_v1 : ImageDimPattern<I, "_V1", f16, "_D16_gfx80">;
     def _unpacked_v2 : ImageDimPattern<d16helper, "_V2", v2i32, "_D16_gfx80">;
     def _unpacked_v4 : ImageDimPattern<d16helper, "_V4", v4i32, "_D16_gfx80">;
+    def _unpacked_v8 : ImageDimPattern<d16helper, "_V8", v8i32, "_D16_gfx80">;
   } // End HasUnpackedD16VMem.
 
   let SubtargetPredicate = HasPackedD16VMem in {
@@ -637,6 +638,7 @@ multiclass ImageDimD16Helper<AMDGPUImageDimIntrinsic I,
     // used on gfx900
     def _packed_v2_gfx9 : ImageDimPattern<I, "_V1", v2f16, "_D16">;
     def _packed_v4 : ImageDimPattern<d16helper, "_V2", v2i32, "_D16">;
+    def _packed_v8 : ImageDimPattern<d16helper, "_V4", v4i32, "_D16">;
   } // End HasPackedD16VMem.
 }
 
