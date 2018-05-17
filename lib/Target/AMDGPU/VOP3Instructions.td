@@ -219,7 +219,8 @@ def VOP3b_I64_I1_I32_I32_I64 : VOPProfile<[i64, i32, i32, i64]> {
 // VOP3 INTERP
 //===----------------------------------------------------------------------===//
 
-class VOP3Interp<string OpName, VOPProfile P, list<dag> pattern = []> : VOP3_Pseudo<OpName, P, pattern> {
+class VOP3Interp<string OpName, VOPProfile P, list<dag> pattern = []> :
+                 VOP3_Pseudo<OpName, P, pattern> {
   let AsmMatchConverter = "cvtVOP3Interp";
 }
 
