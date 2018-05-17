@@ -4822,11 +4822,11 @@ SDValue SITargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
     SDValue M0 = copyToM0(DAG, DAG.getEntryNode(), DL, Op.getOperand(6));
     SDValue Glue = SDValue(M0.getNode(), 1);
     SDValue Ops[] = {
-      Op.getOperand(1), // Src0
+      Op.getOperand(2), // Src0
       Op.getOperand(3), // Attrchan
       Op.getOperand(4), // Attr
       DAG.getConstant(0, DL, MVT::i32), // $src0_modifiers
-      Op.getOperand(2), // Src2
+      Op.getOperand(1), // Src2
       DAG.getConstant(0, DL, MVT::i32), // $src2_modifiers
       Op.getOperand(5), // high
       DAG.getConstant(0, DL, MVT::i1), // $clamp
