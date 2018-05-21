@@ -49,6 +49,7 @@ public:
   bool writeNopData(uint64_t Count, MCObjectWriter *OW) const override;
 
   const MCFixupKindInfo &getFixupKindInfo(MCFixupKind Kind) const override;
+  Optional<MCFixupKind> getFixupKind(StringRef Name) const override;
 };
 
 } //End anonymous namespace
@@ -94,6 +95,7 @@ static uint64_t adjustFixupValue(const MCFixup &Fixup, uint64_t Value,
   case FK_Data_8:
   case FK_PCRel_4:
   case FK_SecRel_4:
+  case AMDGPU::fixup_srd_address:
     return Value;
   default:
     llvm_unreachable("unhandled fixup kind");
@@ -134,6 +136,12 @@ const MCFixupKindInfo &AMDGPUAsmBackend::getFixupKindInfo(
     return MCAsmBackend::getFixupKindInfo(Kind);
 
   return Infos[Kind - FirstTargetFixupKind];
+}
+
+Optional<MCFixupKind> AMDGPUAsmBackend::getFixupKind(StringRef Name) const {
+  if (Name == "R_AMDGPU_SRDADDRESS")
+    return MCFixupKind(AMDGPU::fixup_srd_address);
+  return None;
 }
 
 unsigned AMDGPUAsmBackend::getMinimumNopSize() const {

@@ -785,7 +785,7 @@ The following relocation types are supported:
      ``R_AMDGPU_GOTPCREL32_HI`` Static  9      ``word32``  (G + GOT + A - P) >> 32
      ``R_AMDGPU_REL32_LO``      Static  10     ``word32``  (S + A - P) & 0xFFFFFFFF
      ``R_AMDGPU_REL32_HI``      Static  11     ``word32``  (S + A - P) >> 32
-     *reserved*                         12
+     ``R_AMDGPU_SRDADDRESS``    Static  12     ``word64``  *See below*
      ``R_AMDGPU_RELATIVE64``    Dynamic 13     ``word64``  B + A
      ========================== ======= =====  ==========  ==============================
 
@@ -794,6 +794,10 @@ the ``mesa3d`` OS, which does not support ``R_AMDGPU_ABS64``.
 
 There is no current OS loader support for 32 bit programs and so
 ``R_AMDGPU_ABS32`` is not used.
+
+``R_AMDGPU_SRDADDRESS`` is only supported by AMD's closed-source driver, and is
+defined in LLVM solely for assembler and disassembler support. Therefore its
+calculation is not defined here.
 
 .. _amdgpu-dwarf:
 

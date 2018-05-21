@@ -7,6 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "AMDGPUFixupKinds.h"
 #include "AMDGPUMCTargetDesc.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/MC/MCELFObjectWriter.h"
@@ -77,6 +78,13 @@ unsigned AMDGPUELFObjectWriter::getRelocType(MCContext &Ctx,
     return ELF::R_AMDGPU_ABS32;
   case FK_Data_8:
     return ELF::R_AMDGPU_ABS64;
+  }
+
+  switch (AMDGPU::Fixups(Fixup.getKind())) {
+    case AMDGPU::fixup_srd_address:
+    return ELF::R_AMDGPU_SRDADDRESS;
+  default:
+    break;
   }
 
   llvm_unreachable("unhandled relocation type");

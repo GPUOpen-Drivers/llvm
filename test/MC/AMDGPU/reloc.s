@@ -13,6 +13,7 @@
 // CHECK: }
 // CHECK: .rel.data {
 // CHECK: R_AMDGPU_ABS64 temp 0x0
+// CHECK: R_AMDGPU_SRDADDRESS - 0x0
 // CHECK: }
 // CHECK: ]
 
@@ -45,3 +46,5 @@ kernel:
 ptr:
 	.quad	temp
 	.size	ptr, 8
+	.reloc	8, R_AMDGPU_SRDADDRESS
+	.quad	0x10
