@@ -4800,7 +4800,7 @@ SDValue SITargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
         DAG.getConstant(0, DL, MVT::i32), // $src2_modifiers
         Op.getOperand(4), // high
         DAG.getConstant(0, DL, MVT::i1), // $clamp
-        DAG.getConstant(0, DL, MVT::i1) // $omod
+        DAG.getConstant(0, DL, MVT::i32) // $omod
       };
       return DAG.getNode(AMDGPUISD::INTERP_P1LV_F16, DL, MVT::f32, Ops);
     } else {
@@ -4812,7 +4812,7 @@ SDValue SITargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
         DAG.getConstant(0, DL, MVT::i32), // $src0_modifiers
         Op.getOperand(4), // high
         DAG.getConstant(0, DL, MVT::i1), // $clamp
-        DAG.getConstant(0, DL, MVT::i1), // $omod
+        DAG.getConstant(0, DL, MVT::i32), // $omod
         Glue
       };
       return DAG.getNode(AMDGPUISD::INTERP_P1LL_F16, DL, MVT::f32, Ops);
