@@ -209,6 +209,7 @@ class MTBUF_Load_Pseudo <string opName,
   let PseudoInstr = opName # "_" # getAddrName<addrKindCopy>.ret;
   let mayLoad = 1;
   let mayStore = 0;
+  let IsAddr64 = !if(addr64, 1, 0);
 }
 
 multiclass MTBUF_Pseudo_Loads<string opName, RegisterClass vdataClass,
@@ -255,6 +256,7 @@ class MTBUF_Store_Pseudo <string opName,
   let PseudoInstr = opName # "_" # getAddrName<addrKindCopy>.ret;
   let mayLoad = 0;
   let mayStore = 1;
+  let IsAddr64 = !if(addr64, 1, 0);
 }
 
 multiclass MTBUF_Pseudo_Stores<string opName, RegisterClass vdataClass,
@@ -458,6 +460,7 @@ class MUBUF_Load_Pseudo <string opName,
   let Uses = !if(isLds, [EXEC, M0], [EXEC]);
   let has_tfe = !if(isLds, 0, 1);
   let lds = isLds;
+  let IsAddr64 = !if(addr64, 1, 0);
 }
 
 // FIXME: tfe can't be an operand because it requires a separate
@@ -521,6 +524,7 @@ class MUBUF_Store_Pseudo <string opName,
   let mayLoad = 0;
   let mayStore = 1;
   let maybeAtomic = 1;
+  let IsAddr64 = !if(addr64, 1, 0);
 }
 
 multiclass MUBUF_Pseudo_Stores<string opName, RegisterClass vdataClass,

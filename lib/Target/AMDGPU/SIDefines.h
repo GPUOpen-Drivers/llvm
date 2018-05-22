@@ -88,7 +88,11 @@ enum : uint64_t {
   IsPacked = UINT64_C(1) << 49,
 
   // "d16" bit set or not.
-  D16 = UINT64_C(1) << 50
+  D16 = UINT64_C(1) << 50,
+
+  // Is MUBUF/MTBUF in addr64 mode.
+  IsAddr64 = UINT64_C(1) << 51
+
 };
 
 // v_cmp_class_* etc. use a 10-bit mask for what operation is checked.
