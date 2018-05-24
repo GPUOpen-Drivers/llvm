@@ -2301,10 +2301,6 @@ bool AMDGPUAsmParser::validateMIMGDataSize(const MCInst &Inst) {
   if ((Desc.TSFlags & SIInstrFlags::MIMG) == 0)
     return true;
 
-  // Gather4 instructions do not need validation: dst size is hardcoded.
-  if (Desc.TSFlags & SIInstrFlags::Gather4)
-    return true;
-
   int VDataIdx = AMDGPU::getNamedOperandIdx(Opc, AMDGPU::OpName::vdata);
   int DMaskIdx = AMDGPU::getNamedOperandIdx(Opc, AMDGPU::OpName::dmask);
   int TFEIdx   = AMDGPU::getNamedOperandIdx(Opc, AMDGPU::OpName::tfe);
@@ -2315,9 +2311,16 @@ bool AMDGPUAsmParser::validateMIMGDataSize(const MCInst &Inst) {
 
   unsigned VDataSize = AMDGPU::getRegOperandSize(getMRI(), Desc, VDataIdx);
   unsigned TFESize = Inst.getOperand(TFEIdx).getImm()? 1 : 0;
-  unsigned DMask = Inst.getOperand(DMaskIdx).getImm() & 0xf;
-  if (DMask == 0)
-    DMask = 1;
+
+  unsigned DMask = 1;
+  // Gather4 overloads DMask. For data size calc set to all channels
+  if (Desc.TSFlags & SIInstrFlags::Gather4)
+    DMask = 0xf;
+  else {
+    DMask = Inst.getOperand(DMaskIdx).getImm() & 0xf;
+    if (DMask == 0)
+      DMask = 1;
+  }
 
   unsigned DataSize = countPopulation(DMask);
   if ((Desc.TSFlags & SIInstrFlags::D16) != 0 && hasPackedD16()) {

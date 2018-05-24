@@ -343,8 +343,11 @@ multiclass MIMG_Gather_Src_Helper <bits<7> op, string asm,
                                     RegisterClass dst_rc,
                                     bit wqm, bit d16_bit,
                                     string prefix,
-                                    string suffix> {
-  def prefix # _V1 # suffix : MIMG_Gather_Helper <op, asm, dst_rc, VGPR_32, wqm, d16_bit, "AMDGPU">;
+                                    string suffix,
+                                    bit enableDasm = 0> {
+  // _V* variants have different address size, but the size is not encoded.
+  // Make sure only one variant can be disassembled, also taking into account the enableDasm flag
+  def prefix # _V1 # suffix : MIMG_Gather_Helper <op, asm, dst_rc, VGPR_32, wqm, d16_bit, !if(enableDasm, "AMDGPU", "")>;
   def prefix # _V2 # suffix : MIMG_Gather_Helper <op, asm, dst_rc, VReg_64, wqm, d16_bit>;
   def prefix # _V3 # suffix : MIMG_Gather_Helper <op, asm, dst_rc, VReg_96, wqm, d16_bit>;
   def prefix # _V4 # suffix : MIMG_Gather_Helper <op, asm, dst_rc, VReg_128, wqm, d16_bit>;
@@ -353,15 +356,21 @@ multiclass MIMG_Gather_Src_Helper <bits<7> op, string asm,
 }
 
 multiclass MIMG_Gather <bits<7> op, string asm, bit wqm=0> {
-  defm : MIMG_Gather_Src_Helper<op, asm, VReg_128, wqm, 0, "_V4", "">;
+  // _V* variants have different dst size that isn't encoded.
+  // Make sure only one is used for disassmbly.
+  // Disassembler should reconstruct the dst size using tfe/lwe
+  defm : MIMG_Gather_Src_Helper<op, asm, VReg_128, wqm, 0, "_V4", "", 1>;
+  defm : MIMG_Gather_Src_Helper<op, asm, VReg_256, wqm, 0, "_V8", "">;
 
   let d16 = 1 in {
     let AssemblerPredicate = HasPackedD16VMem in {
-      defm : MIMG_Gather_Src_Helper<op, asm, VReg_64, wqm, 1, "_V2", "_D16">;
+      defm : MIMG_Gather_Src_Helper<op, asm, VReg_64, wqm, 1, "_V2", "_D16", 1>;
+      defm : MIMG_Gather_Src_Helper<op, asm, VReg_128, wqm, 1, "_V4", "_D16">;
     } // End HasPackedD16VMem.
 
     let AssemblerPredicate = HasUnpackedD16VMem, DecoderNamespace = "GFX80_UNPACKED" in {
-      defm : MIMG_Gather_Src_Helper<op, asm, VReg_128, wqm, 1, "_V4", "_D16_gfx80">;
+      defm : MIMG_Gather_Src_Helper<op, asm, VReg_128, wqm, 1, "_V4", "_D16_gfx80", 1>;
+      defm : MIMG_Gather_Src_Helper<op, asm, VReg_256, wqm, 1, "_V8", "_D16_gfx80">;
     } // End HasUnpackedD16VMem.
   } // End d16 = 1.
 }
@@ -661,6 +670,7 @@ foreach intr = AMDGPUImageDimIntrinsics in {
 
 foreach intr = AMDGPUImageDimGatherIntrinsics in {
   def intr#_pat3 : ImageDimPattern<intr, "_V4", v4f32>;
+  def intr#_pat3_tfc : ImageDimPattern<intr, "_V8", v8f32>;
 
   def intr#_d16helper_profile : AMDGPUDimProfileCopy<intr.P> {
     let RetTypes = !foreach(ty, intr.P.RetTypes, llvm_any_ty);
@@ -677,6 +687,10 @@ foreach intr = AMDGPUImageDimGatherIntrinsics in {
         ImageDimPattern<!cast<AMDGPUImageDimIntrinsic>(
                             "int_SI_image_d16helper_" # intr.P.OpMod # intr.P.Dim.Name),
                         "_V4", v4i32, "_D16_gfx80">;
+    def intr#_unpacked_v8 :
+        ImageDimPattern<!cast<AMDGPUImageDimIntrinsic>(
+                            "int_SI_image_d16helper_" # intr.P.OpMod # intr.P.Dim.Name),
+                        "_V8", v8i32, "_D16_gfx80">;
   } // End HasUnpackedD16VMem.
 
   let SubtargetPredicate = HasPackedD16VMem in {
@@ -684,6 +698,10 @@ foreach intr = AMDGPUImageDimGatherIntrinsics in {
         ImageDimPattern<!cast<AMDGPUImageDimIntrinsic>(
                             "int_SI_image_d16helper_" # intr.P.OpMod # intr.P.Dim.Name),
                         "_V2", v2i32, "_D16">;
+    def intr#_packed_v8 :
+        ImageDimPattern<!cast<AMDGPUImageDimIntrinsic>(
+                            "int_SI_image_d16helper_" # intr.P.OpMod # intr.P.Dim.Name),
+                        "_V4", v4i32, "_D16">;
   } // End HasPackedD16VMem.
 }
 
@@ -750,16 +768,19 @@ multiclass ImageSampleAltPatterns<SDPatternOperator name, string opcode> {
 // ImageGather4 patterns.
 multiclass ImageGather4Patterns<SDPatternOperator name, string opcode> {
   defm : ImageSampleDataPatterns<name, !cast<string>(opcode # _V4), v4f32>;
+  defm : ImageSampleDataPatterns<name, !cast<string>(opcode # _V8), v8f32>;
 }
 
 // ImageGather4 alternative patterns for illegal vector half Types.
 multiclass ImageGather4AltPatterns<SDPatternOperator name, string opcode> {
   let SubtargetPredicate = HasUnpackedD16VMem in {
     defm : ImageSampleDataPatterns<name, !cast<string>(opcode # _V4), v4i32, "_D16_gfx80">;
+    defm : ImageSampleDataPatterns<name, !cast<string>(opcode # _V8), v8i32, "_D16_gfx80">;
   } // End HasUnpackedD16VMem.
 
   let SubtargetPredicate = HasPackedD16VMem in {
     defm : ImageSampleDataPatterns<name, !cast<string>(opcode # _V2), v2i32, "_D16">;
+    defm : ImageSampleDataPatterns<name, !cast<string>(opcode # _V4), v4i32, "_D16">;
   } // End HasPackedD16VMem.
 }
 
