@@ -993,6 +993,21 @@ bool AMDGPUDAGToDAGISel::SelectDS64Bit4ByteAligned(SDValue Addr, SDValue &Base,
   return true;
 }
 
+
+static MachineSDNode *buildSMovImm64(SelectionDAG &DAG, const SDLoc &DL,
+                              uint64_t Val) {
+  SDValue ValLo = DAG.getTargetConstant(Val & 0xffffffffU, DL, MVT::i32);
+  SDValue ValHi = DAG.getTargetConstant(Val >> 32, DL, MVT::i32);
+  const SDValue Ops0[] = {
+    DAG.getTargetConstant(AMDGPU::SGPR_64RegClassID, DL, MVT::i32),
+    SDValue(DAG.getMachineNode(AMDGPU::S_MOV_B32, DL, MVT::i32, ValLo), 0),
+    DAG.getTargetConstant(AMDGPU::sub0, DL, MVT::i32),
+    SDValue(DAG.getMachineNode(AMDGPU::S_MOV_B32, DL, MVT::i32, ValHi), 0),
+    DAG.getTargetConstant(AMDGPU::sub1, DL, MVT::i32)
+  };
+  return DAG.getMachineNode(AMDGPU::REG_SEQUENCE, DL, MVT::v2i32, Ops0);
+}
+
 bool AMDGPUDAGToDAGISel::SelectMUBUF(SDValue Addr, SDValue &Ptr,
                                      SDValue &VAddr, SDValue &SOffset,
                                      SDValue &Offset, SDValue &Offen,
@@ -1026,8 +1041,22 @@ bool AMDGPUDAGToDAGISel::SelectMUBUF(SDValue Addr, SDValue &Ptr,
       SDValue N2 = N0.getOperand(0);
       SDValue N3 = N0.getOperand(1);
       Addr64 = CurDAG->getTargetConstant(1, DL, MVT::i1);
-      Ptr = N2;
-      VAddr = N3;
+      if (N2->isDivergent()) {
+        if (N3->isDivergent()) {
+          // Both N2 and N3 are divergent. Keep the add and use N2+N3 as the
+          // vaddr, and construct the resource out of 0.
+          Ptr = SDValue(buildSMovImm64(*CurDAG, DL, 0), 0);
+          VAddr = N0;
+        } else {
+          // N2 is divergent, N3 is not.
+          Ptr = N3;
+          VAddr = N2;
+        }
+      } else {
+        // N2 is not divergent.
+        Ptr = N2;
+        VAddr = N3;
+      }
     } else {
       // (add N0, C1) -> offset
       VAddr = CurDAG->getTargetConstant(0, DL, MVT::i32);
@@ -1054,8 +1083,23 @@ bool AMDGPUDAGToDAGISel::SelectMUBUF(SDValue Addr, SDValue &Ptr,
     SDValue N0 = Addr.getOperand(0);
     SDValue N1 = Addr.getOperand(1);
     Addr64 = CurDAG->getTargetConstant(1, DL, MVT::i1);
-    Ptr = N0;
-    VAddr = N1;
+
+    if (N0->isDivergent()) {
+      if (N1->isDivergent()) {
+        // Both N0 and N1 are divergent. Use the result of the add as the
+        // addr64, and construct the resource from a 0 address.
+        Ptr = SDValue(buildSMovImm64(*CurDAG, DL, 0), 0);
+        VAddr = Addr;
+      } else {
+        // N0 is divergent, N1 is not.
+        Ptr = N1;
+        VAddr = N0;
+      }
+    } else {
+      // N0 is not divergent.
+      Ptr = N0;
+      VAddr = N1;
+    }
     Offset = CurDAG->getTargetConstant(0, DL, MVT::i16);
     return true;
   }
