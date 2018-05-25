@@ -9,7 +9,7 @@ main_body:
 }
 
 ; GCN-LABEL: {{^}}sample_1d_tfe:
-; GCN: image_sample v[0:7], v0, s[0:7], s[8:11] dmask:0xf tfe{{$}}
+; GCN: image_sample v[0:7], v5, s[0:7], s[8:11] dmask:0xf tfe{{$}}
 define amdgpu_ps <8 x float> @sample_1d_tfe(<8 x i32> inreg %rsrc, <4 x i32> inreg %samp, float %s) {
 main_body:
   %v = call <8 x float> @llvm.amdgcn.image.sample.1d.v8f32.f32(i32 15, float %s, <8 x i32> %rsrc, <4 x i32> %samp, i1 0, i32 1, i32 0)
@@ -17,7 +17,7 @@ main_body:
 }
 
 ; GCN-LABEL: {{^}}sample_1d_tfe_adjust_writemask_1:
-; GCN: image_sample v[0:1], v0, s[0:7], s[8:11] dmask:0x1 tfe{{$}}
+; GCN: image_sample v[0:1], v2, s[0:7], s[8:11] dmask:0x1 tfe{{$}}
 define amdgpu_ps <2 x float> @sample_1d_tfe_adjust_writemask_1(<8 x i32> inreg %rsrc, <4 x i32> inreg %samp, float %s) {
 main_body:
   %v = call <8 x float> @llvm.amdgcn.image.sample.1d.v8f32.f32(i32 15, float %s, <8 x i32> %rsrc, <4 x i32> %samp, i1 0, i32 1, i32 0)
@@ -29,7 +29,7 @@ main_body:
 }
 
 ; GCN-LABEL: {{^}}sample_1d_tfe_adjust_writemask_2:
-; GCN: image_sample v[0:1], v0, s[0:7], s[8:11] dmask:0x2 tfe{{$}}
+; GCN: image_sample v[0:1], v2, s[0:7], s[8:11] dmask:0x2 tfe{{$}}
 define amdgpu_ps <2 x float> @sample_1d_tfe_adjust_writemask_2(<8 x i32> inreg %rsrc, <4 x i32> inreg %samp, float %s) {
 main_body:
   %v = call <8 x float> @llvm.amdgcn.image.sample.1d.v8f32.f32(i32 15, float %s, <8 x i32> %rsrc, <4 x i32> %samp, i1 0, i32 1, i32 0)
@@ -41,7 +41,7 @@ main_body:
 }
 
 ; GCN-LABEL: {{^}}sample_1d_tfe_adjust_writemask_3:
-; GCN: image_sample v[0:1], v0, s[0:7], s[8:11] dmask:0x4 tfe{{$}}
+; GCN: image_sample v[0:1], v2, s[0:7], s[8:11] dmask:0x4 tfe{{$}}
 define amdgpu_ps <2 x float> @sample_1d_tfe_adjust_writemask_3(<8 x i32> inreg %rsrc, <4 x i32> inreg %samp, float %s) {
 main_body:
   %v = call <8 x float> @llvm.amdgcn.image.sample.1d.v8f32.f32(i32 15, float %s, <8 x i32> %rsrc, <4 x i32> %samp, i1 0, i32 1, i32 0)
@@ -53,7 +53,7 @@ main_body:
 }
 
 ; GCN-LABEL: {{^}}sample_1d_tfe_adjust_writemask_4:
-; GCN: image_sample v[0:1], v0, s[0:7], s[8:11] dmask:0x8 tfe{{$}}
+; GCN: image_sample v[0:1], v2, s[0:7], s[8:11] dmask:0x8 tfe{{$}}
 define amdgpu_ps <2 x float> @sample_1d_tfe_adjust_writemask_4(<8 x i32> inreg %rsrc, <4 x i32> inreg %samp, float %s) {
 main_body:
   %v = call <8 x float> @llvm.amdgcn.image.sample.1d.v8f32.f32(i32 15, float %s, <8 x i32> %rsrc, <4 x i32> %samp, i1 0, i32 1, i32 0)
@@ -65,7 +65,7 @@ main_body:
 }
 
 ; GCN-LABEL: {{^}}sample_1d_tfe_adjust_writemask_12:
-; GCN: image_sample v[0:2], v0, s[0:7], s[8:11] dmask:0x3 tfe{{$}}
+; GCN: image_sample v[0:2], v3, s[0:7], s[8:11] dmask:0x3 tfe{{$}}
 define amdgpu_ps <4 x float> @sample_1d_tfe_adjust_writemask_12(<8 x i32> inreg %rsrc, <4 x i32> inreg %samp, float %s) {
 main_body:
   %v = call <8 x float> @llvm.amdgcn.image.sample.1d.v8f32.f32(i32 15, float %s, <8 x i32> %rsrc, <4 x i32> %samp, i1 0, i32 1, i32 0)
@@ -79,7 +79,7 @@ main_body:
 }
 
 ; GCN-LABEL: {{^}}sample_1d_tfe_adjust_writemask_24:
-; GCN: image_sample v[0:2], v0, s[0:7], s[8:11] dmask:0xa tfe{{$}}
+; GCN: image_sample v[0:2], v3, s[0:7], s[8:11] dmask:0xa tfe{{$}}
 define amdgpu_ps <4 x float> @sample_1d_tfe_adjust_writemask_24(<8 x i32> inreg %rsrc, <4 x i32> inreg %samp, float %s) {
 main_body:
   %v = call <8 x float> @llvm.amdgcn.image.sample.1d.v8f32.f32(i32 15, float %s, <8 x i32> %rsrc, <4 x i32> %samp, i1 0, i32 1, i32 0)
@@ -93,7 +93,7 @@ main_body:
 }
 
 ; GCN-LABEL: {{^}}sample_1d_tfe_adjust_writemask_134:
-; GCN: image_sample v[0:3], v0, s[0:7], s[8:11] dmask:0xd tfe{{$}}
+; GCN: image_sample v[0:3], v4, s[0:7], s[8:11] dmask:0xd tfe{{$}}
 define amdgpu_ps <4 x float> @sample_1d_tfe_adjust_writemask_134(<8 x i32> inreg %rsrc, <4 x i32> inreg %samp, float %s) {
 main_body:
   %v = call <8 x float> @llvm.amdgcn.image.sample.1d.v8f32.f32(i32 15, float %s, <8 x i32> %rsrc, <4 x i32> %samp, i1 0, i32 1, i32 0)
@@ -109,7 +109,7 @@ main_body:
 }
 
 ; GCN-LABEL: {{^}}sample_1d_lwe:
-; GCN: image_sample v[0:7], v0, s[0:7], s[8:11] dmask:0xf lwe{{$}}
+; GCN: image_sample v[0:7], v5, s[0:7], s[8:11] dmask:0xf lwe{{$}}
 define amdgpu_ps <8 x float> @sample_1d_lwe(<8 x i32> inreg %rsrc, <4 x i32> inreg %samp, float %s) {
 main_body:
   %v = call <8 x float> @llvm.amdgcn.image.sample.1d.v8f32.f32(i32 15, float %s, <8 x i32> %rsrc, <4 x i32> %samp, i1 0, i32 2, i32 0)

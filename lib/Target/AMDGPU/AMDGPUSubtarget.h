@@ -136,6 +136,7 @@ protected:
   bool EnableUnsafeDSOffsetFolding;
   bool EnableSIScheduler;
   bool EnableDS128;
+  bool EnablePRTStrictNull;
   bool DumpCode;
 
   // Subtarget statically properties set by tablegen
@@ -424,6 +425,12 @@ public:
   /// of ds_read/write_b128.
   bool useDS128() const {
     return CIInsts && EnableDS128;
+  }
+
+  /// \returns If target requires PRT Struct NULL support (zero result registers
+  /// for sparse texture support).
+  bool usePRTStrictNull() const {
+    return EnablePRTStrictNull;
   }
 
   /// \returns If MUBUF instructions always perform range checking, even for

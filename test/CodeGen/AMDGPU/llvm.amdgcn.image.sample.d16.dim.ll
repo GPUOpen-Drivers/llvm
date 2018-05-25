@@ -11,8 +11,8 @@ main_body:
 }
 
 ; GCN-LABEL: {{^}}image_sample_2d_f16_tfe:
-; GCN: v_mov_b32_e32 v[[VTFE:[0-9]+]], 0
-; PACKED: image_sample v[{{[0-9]+}}:[[VTFE]]], v[0:1], s[0:7], s[8:11] dmask:0x1 tfe d16{{$}}
+; GCN: v_mov_b32_e32 v{{[0-9]+}}, 0
+; PACKED: image_sample v[{{[0-9]+:[0-9]+}}], v[0:1], s[0:7], s[8:11] dmask:0x1 tfe d16{{$}}
 ; UNPACKED: image_sample v[{{[0-9]+:[0-9]+}}], v[0:1], s[0:7], s[8:11] dmask:0x1 tfe d16{{$}}
 define amdgpu_ps <2 x float> @image_sample_2d_f16_tfe(<8 x i32> inreg %rsrc, <4 x i32> inreg %samp, float %s, float %t) {
 main_body:

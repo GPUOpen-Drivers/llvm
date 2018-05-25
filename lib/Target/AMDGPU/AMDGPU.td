@@ -453,6 +453,16 @@ def FeatureEnableDS128 : SubtargetFeature<"enable-ds128",
   "Use ds_{read|write}_b128"
 >;
 
+// Sparse texture support requires that all result registers are zeroed when
+// PRTStrictNull is set to true. This feature is turned on for all architectures
+// but is enabled as a feature in case there are situations where PRTStrictNull
+// is disabled by the driver.
+def FeatureEnablePRTStrictNull : SubtargetFeature<"enable-ptr-strict-null",
+  "EnablePRTStrictNull",
+  "true",
+  "Enable zeroing of result registers for sparse texture fetches"
+>;
+
 // Unless +-flat-for-global is specified, turn on FlatForGlobal for
 // all OS-es on VI and newer hardware to avoid assertion failures due
 // to missing ADDR64 variants of MUBUF instructions.
@@ -503,24 +513,24 @@ def FeatureR700 : SubtargetFeatureGeneration<"R700",
 >;
 
 def FeatureEvergreen : SubtargetFeatureGeneration<"EVERGREEN",
-  [FeatureFetchLimit16, FeatureLocalMemorySize32768]
+  [FeatureFetchLimit16, FeatureLocalMemorySize32768, FeatureEnablePRTStrictNull]
 >;
 
 def FeatureNorthernIslands : SubtargetFeatureGeneration<"NORTHERN_ISLANDS",
   [FeatureFetchLimit16, FeatureWavefrontSize64,
-   FeatureLocalMemorySize32768]
+   FeatureLocalMemorySize32768, FeatureEnablePRTStrictNull]
 >;
 
 def FeatureSouthernIslands : SubtargetFeatureGeneration<"SOUTHERN_ISLANDS",
   [FeatureFP64, FeatureLocalMemorySize32768, FeatureMIMG_R128,
   FeatureWavefrontSize64, FeatureGCN,
-  FeatureLDSBankCount32, FeatureMovrel]
+  FeatureLDSBankCount32, FeatureMovrel, FeatureEnablePRTStrictNull]
 >;
 
 def FeatureSeaIslands : SubtargetFeatureGeneration<"SEA_ISLANDS",
   [FeatureFP64, FeatureLocalMemorySize65536, FeatureMIMG_R128,
   FeatureWavefrontSize64, FeatureGCN, FeatureFlatAddressSpace,
-  FeatureCIInsts, FeatureMovrel]
+  FeatureCIInsts, FeatureMovrel, FeatureEnablePRTStrictNull]
 >;
 
 def FeatureVolcanicIslands : SubtargetFeatureGeneration<"VOLCANIC_ISLANDS",
@@ -530,7 +540,7 @@ def FeatureVolcanicIslands : SubtargetFeatureGeneration<"VOLCANIC_ISLANDS",
    FeatureSMemRealTime, FeatureVGPRIndexMode, FeatureMovrel,
    FeatureScalarStores, FeatureInv2PiInlineImm,
    FeatureSDWA, FeatureSDWAOutModsVOPC, FeatureSDWAMac, FeatureDPP,
-   FeatureIntClamp
+   FeatureIntClamp, FeatureEnablePRTStrictNull
   ]
 >;
 
@@ -543,7 +553,7 @@ def FeatureGFX9 : SubtargetFeatureGeneration<"GFX9",
    FeatureFastFMAF32, FeatureDPP, FeatureIntClamp,
    FeatureSDWA, FeatureSDWAOmod, FeatureSDWAScalar, FeatureSDWASdst,
    FeatureFlatInstOffsets, FeatureFlatGlobalInsts, FeatureFlatScratchInsts,
-   FeatureAddNoCarryInsts, FeatureScalarAtomics
+   FeatureAddNoCarryInsts, FeatureScalarAtomics, FeatureEnablePRTStrictNull
   ]
 >;
 
