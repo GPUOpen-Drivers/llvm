@@ -121,9 +121,6 @@ class InstSI <dag outs, dag ins, string asm = "",
   // This bit indicates that this is a D16 instruction.
   field bit D16 = 0;
 
-  // This bit indicates that an MUBUF/MTBUF instruction is addr64.
-  field bit IsAddr64 = 0;
-
   // These need to be kept in sync with the enum in SIInstrFlags.
   let TSFlags{0} = SALU;
   let TSFlags{1} = VALU;
@@ -180,7 +177,6 @@ class InstSI <dag outs, dag ins, string asm = "",
   let TSFlags{49} = IsPacked;
 
   let TSFlags{50} = D16;
-  let TSFlags{51} = IsAddr64;
 
   let SchedRW = [Write32Bit];
 

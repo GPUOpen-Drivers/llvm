@@ -470,10 +470,6 @@ public:
     return MI.getDesc().TSFlags & SIInstrFlags::FLAT;
   }
 
-  static bool isAddr64(const MachineInstr &MI) {
-    return MI.getDesc().TSFlags & SIInstrFlags::IsAddr64;
-  }
-
   // Is a FLAT encoded instruction which accesses a specific segment,
   // i.e. global_* or scratch_*.
   static bool isSegmentSpecificFLAT(const MachineInstr &MI) {

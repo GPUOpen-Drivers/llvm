@@ -3660,13 +3660,12 @@ void SIInstrInfo::legalizeOperands(MachineInstr &MI,
 
   // Legalize MIMG and MUBUF/MTBUF for shaders.
   //
-  // Shaders only generate non-addr64 MUBUF/MTBUF instructions via intrinsics
-  // or via scratch memory access. In both cases, the legalization never
-  // involves conversion to the addr64 form.
+  // Shaders only generate MUBUF/MTBUF instructions via intrinsics or via
+  // scratch memory access. In both cases, the legalization never involves
+  // conversion to the addr64 form.
   if (isMIMG(MI) ||
       (AMDGPU::isShader(MF.getFunction().getCallingConv()) &&
-       (isMUBUF(MI) || isMTBUF(MI))
-       && !isAddr64(MI))) {
+       (isMUBUF(MI) || isMTBUF(MI)))) {
     MachineOperand *SRsrc = getNamedOperand(MI, AMDGPU::OpName::srsrc);
     if (SRsrc && !RI.isSGPRClass(MRI.getRegClass(SRsrc->getReg()))) {
       unsigned SGPR = readlaneVGPRToSGPR(SRsrc->getReg(), MI, MRI);
