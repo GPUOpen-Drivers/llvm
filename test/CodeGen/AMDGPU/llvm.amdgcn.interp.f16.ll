@@ -29,8 +29,8 @@
 define amdgpu_ps half @interp_f16(float inreg %i, float inreg %j, i32 inreg %m0) #0 {
 main_body:
   %p1_0 = call float @llvm.amdgcn.interp.p1.f16(float %i, i32 1, i32 2, i1 0, i32 %m0)
-  %p2_0 = call half @llvm.amdgcn.interp.p2.f16(float %p1_0, float %j, i32 1, i32 2, i1 0, i32 %m0)
   %p1_1 = call float @llvm.amdgcn.interp.p1.f16(float %i, i32 1, i32 2, i1 1, i32 %m0)
+  %p2_0 = call half @llvm.amdgcn.interp.p2.f16(float %p1_0, float %j, i32 1, i32 2, i1 0, i32 %m0)
   %p2_1 = call half @llvm.amdgcn.interp.p2.f16(float %p1_1, float %j, i32 1, i32 2, i1 1, i32 %m0)
   %res = fadd half %p2_0, %p2_1
   ret half %res
