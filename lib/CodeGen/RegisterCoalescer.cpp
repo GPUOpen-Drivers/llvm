@@ -2452,10 +2452,7 @@ JoinVals::analyzeValue(unsigned ValNo, JoinVals &Other) {
   //   %other = COPY %ext
   //   %this  = COPY %ext <-- Erase this copy
   //
-  // Avoid this case when there are subregs, as it can result in an incorrect
-  // subreg live range.
-  //
-  if (!TrackSubRegLiveness && DefMI->isFullCopy() && !CP.isPartial()
+  if (DefMI->isFullCopy() && !CP.isPartial()
       && valuesIdentical(VNI, V.OtherVNI, Other))
     return CR_Erase;
 
