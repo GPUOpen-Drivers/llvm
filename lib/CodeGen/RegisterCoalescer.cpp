@@ -1406,11 +1406,29 @@ bool RegisterCoalescer::eliminateUndefCopy(MachineInstr *CopyMI) {
   } else if (SrcLI.liveAt(Idx))
     return false;
 
-  DEBUG(dbgs() << "\tEliminating copy of <undef> value\n");
-
-  // Remove any DstReg segments starting at the instruction.
+  // If the undef copy defines a live-out value (i.e. an input to a PHI def),
+  // then replace it with an IMPLICIT_DEF.
   LiveInterval &DstLI = LIS->getInterval(DstReg);
   SlotIndex RegIndex = Idx.getRegSlot();
+  LiveRange::Segment *Seg = DstLI.getSegmentContaining(RegIndex);
+  assert(Seg != nullptr && "No segment for defining instruction");
+  if (VNInfo *V = DstLI.getVNInfoAt(Seg->end)) {
+    if (V->isPHIDef()) {
+      CopyMI->setDesc(TII->get(TargetOpcode::IMPLICIT_DEF));
+      for (unsigned i = CopyMI->getNumOperands(); i != 0; --i) {
+        MachineOperand &MO = CopyMI->getOperand(i-1);
+        if (MO.isReg() && MO.isUse())
+          CopyMI->RemoveOperand(i-1);
+      }
+      DEBUG(dbgs() << "\tReplaced copy of <undef> value with an "
+                      "implicit def\n");
+      return false;
+    }
+  }
+
+  // Remove any DstReg segments starting at the instruction.
+  DEBUG(dbgs() << "\tEliminating copy of <undef> value\n");
+
   // Remove value or merge with previous one in case of a subregister def.
   if (VNInfo *PrevVNI = DstLI.getVNInfoAt(Idx)) {
     VNInfo *VNI = DstLI.getVNInfoAt(RegIndex);
@@ -1634,6 +1652,10 @@ bool RegisterCoalescer::joinCopy(MachineInstr *CopyMI, bool &Again) {
   if (!CP.isPhys() && eliminateUndefCopy(CopyMI)) {
     deleteInstr(CopyMI);
     return false;  // Not coalescable.
+  }
+  if (CopyMI->isImplicitDef()) {
+    // Not coalesceable; eliminateUndefCopy turned it into implicit_def.
+    return false;
   }
 
   // Coalesced copies are normally removed immediately, but transformations
@@ -2086,6 +2108,13 @@ class JoinVals {
     /// True once Pruned above has been computed.
     bool PrunedComputed = false;
 
+    /// True if this value is determined to be identical to OtherVNI
+    /// (in valuesIdentical). This is used with CR_Erase where the erased
+    /// copy is redundant, i.e. the source value is already the same as
+    /// the destination. In such cases the subranges need to be updated
+    /// properly. See comment at pruneSubRegValues for more info.
+    bool Identical = false;
+
     Val() = default;
 
     bool isAnalyzed() const { return WriteLanes.any(); }
@@ -2272,7 +2301,7 @@ bool JoinVals::valuesIdentical(VNInfo *Value0, VNInfo *Value1,
   unsigned Reg0;
   bool SubRangeDead = false;
   std::tie(Orig0, Reg0) = followCopyChain(Value0, SubRangeDead);
-  if (Orig0 == Value1 || SubRangeDead)
+  if ((Orig0 == Value1 && Reg0 == Other.Reg) || SubRangeDead)
     return true;
 
   const VNInfo *Orig1;
@@ -2453,8 +2482,10 @@ JoinVals::analyzeValue(unsigned ValNo, JoinVals &Other) {
   //   %this  = COPY %ext <-- Erase this copy
   //
   if (DefMI->isFullCopy() && !CP.isPartial()
-      && valuesIdentical(VNI, V.OtherVNI, Other))
+      && valuesIdentical(VNI, V.OtherVNI, Other)) {
+    V.Identical = true;
     return CR_Erase;
+  }
 
   // If the lanes written by this instruction were all undef in OtherVNI, it is
   // still safe to join the live ranges. This can't be done with a simple value
@@ -2758,22 +2789,78 @@ void JoinVals::pruneValues(JoinVals &Other,
   }
 }
 
+/// Consider the following situation when coalescing the copy between
+/// %31 and %45 at 800. (The vertical lines represent live range segments.)
+///
+///                              Main range         Subrange 0004 (sub2)
+///                              %31    %45           %31    %45
+///  544    %45 = COPY %28               +                    +
+///                                      | v1                 | v1
+///  560B bb.1:                          +                    +
+///  624        = %45.sub2               | v2                 | v2
+///  800    %31 = COPY %45        +      +             +      +
+///                               | v0                 | v0
+///  816    %31.sub1 = ...        +                    |
+///  880    %30 = COPY %31        | v1                 +
+///  928    %45 = COPY %30        |      +                    +
+///                               |      | v0                 | v0  <--+
+///  992B   ; backedge -> bb.1    |      +                    +        |
+/// 1040        = %31.sub0        +                                    |
+///                                                 This value must remain
+///                                                 live-out!
+///
+/// Assuming that %31 is coalesced into %45, the copy at 928 becomes
+/// redundant, since it copies the value from %45 back into it. The
+/// conflict resolution for the main range determines that %45.v0 is
+/// to be erased, which is ok since %31.v1 is identical to it.
+/// The problem happens with the subrange for sub2: it has to be live
+/// on exit from the block, but since 928 was actually a point of
+/// definition of %45.sub2, %45.sub2 was not live immediately prior
+/// to that definition. As a result, when 928 was erased, the value v0
+/// for %45.sub2 was pruned in pruneSubRegValues. Consequently, an
+/// IMPLICIT_DEF was inserted as a "backedge" definition for %45.sub2,
+/// providing an incorrect value to the use at 624.
+///
+/// Since the main-range values %31.v1 and %45.v0 were proved to be
+/// identical, the corresponding values in subranges must also be the
+/// same. A redundant copy is removed because it's not needed, and not
+/// because it copied an undefined value, so any liveness that originated
+/// from that copy cannot disappear. When pruning a value that started
+/// at the removed copy, the corresponding identical value must be
+/// extended to replace it.
+///
+/// There are cases where there is another value "in the way" that is also being
+/// pruned here. To avoid that causing liveness to be extended incorrectly, we
+/// do all the pruning first and then the extensions afterwards.
+//
 void JoinVals::pruneSubRegValues(LiveInterval &LI, LaneBitmask &ShrinkMask) {
-  // Look for values being erased.
   bool DidPrune = false;
-  for (unsigned i = 0, e = LR.getNumValNums(); i != e; ++i) {
-    // We should trigger in all cases in which eraseInstrs() does something.
-    // match what eraseInstrs() is doing, print a message so
-    if (Vals[i].Resolution != CR_Erase &&
-        (Vals[i].Resolution != CR_Keep || !Vals[i].ErasableImplicitDef ||
-         !Vals[i].Pruned))
-      continue;
+  // For each subrange in turn...
+  for (LiveInterval::SubRange &S : LI.subranges()) {
+    // Remember end points from pruned values that need liveness extending to
+    // them.
+    SmallVector<SlotIndex, 8> EndPoints;
+    // Also remember pruned defs that required extension, so we can assert that
+    // liveness was extended as we expected.
+    SmallVector<std::pair<SlotIndex, SlotIndex>, 8> PrunedDefs;
 
-    // Check subranges at the point where the copy will be removed.
-    SlotIndex Def = LR.getValNumInfo(i)->def;
-    // Print message so mismatches with eraseInstrs() can be diagnosed.
-    DEBUG(dbgs() << "\t\tExpecting instruction removal at " << Def << '\n');
-    for (LiveInterval::SubRange &S : LI.subranges()) {
+    // Look for values being erased.
+    for (unsigned i = 0, e = LR.getNumValNums(); i != e; ++i) {
+      Val &V = Vals[i];
+      // We should trigger in all cases in which eraseInstrs() does something.
+      if (V.Resolution != CR_Erase &&
+          (V.Resolution != CR_Keep || !V.ErasableImplicitDef || !V.Pruned))
+        continue;
+
+      // Check this subrange at the point where the copy will be removed.
+      SlotIndex Def = LR.getValNumInfo(i)->def;
+      SlotIndex OtherDef;
+      if (V.Identical)
+        OtherDef = V.OtherVNI->def;
+
+      // Print message so mismatches with eraseInstrs() can be diagnosed.
+      DEBUG(dbgs() << "\t\tExpecting instruction removal at " << Def << '\n');
+
       LiveQueryResult Q = S.Query(Def);
 
       // If a subrange starts at the copy then an undefined value has been
@@ -2782,7 +2869,17 @@ void JoinVals::pruneSubRegValues(LiveInterval &LI, LaneBitmask &ShrinkMask) {
       if (ValueOut != nullptr && Q.valueIn() == nullptr) {
         DEBUG(dbgs() << "\t\tPrune sublane " << PrintLaneMask(S.LaneMask)
                      << " at " << Def << "\n");
-        LIS->pruneValue(S, Def, nullptr);
+        if (V.Identical && S.Query(OtherDef).valueOut()) {
+          // If V is identical to V.OtherVNI (and S was live at OtherDef),
+          // then we can't simply prune V from S. V needs to be replaced
+          // with V.OtherVNI. Remember the end points for later extension.
+          DEBUG(dbgs() << "\t\t  (will extend to end points)\n");
+          auto SizeBefore = EndPoints.size();
+          LIS->pruneValue(S, Def, &EndPoints);
+          if (SizeBefore != EndPoints.size())
+            PrunedDefs.push_back(std::pair<SlotIndex, SlotIndex>(Def, OtherDef));
+        } else
+          LIS->pruneValue(S, Def, nullptr);
         DidPrune = true;
         // Mark value number as unused.
         ValueOut->markUnused();
@@ -2795,6 +2892,26 @@ void JoinVals::pruneSubRegValues(LiveInterval &LI, LaneBitmask &ShrinkMask) {
                      << " at " << Def << "\n");
         ShrinkMask |= S.LaneMask;
       }
+    }
+    // Now re-extend liveness to end points.
+    if (!EndPoints.empty()) {
+      DEBUG(dbgs() << "\t\tExtending to EndPoints:";
+            for (auto &EP : EndPoints)
+              dbgs() << " " << EP;
+            dbgs() << "\n");
+      LIS->extendToIndices(S, EndPoints);
+      DEBUG(dbgs() << "\t\t  after extendToIndices:  " << S << "\n");
+#ifndef NDEBUG
+      // Assert that liveness has been extended as expected.
+      for (auto DefPair : PrunedDefs) {
+        SlotIndex Def = DefPair.first;
+        SlotIndex OtherDef = DefPair.second;
+        // Make sure that the value at Def is really V.OtherVNI.
+        LiveRange::iterator Id = S.find(OtherDef);
+        LiveRange::iterator T = S.find(Def);
+        assert(Id != S.end() && T != S.end() && T->valno == Id->valno);
+      }
+#endif
     }
   }
   if (DidPrune)

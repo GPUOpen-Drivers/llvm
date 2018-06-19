@@ -1,0 +1,613 @@
+# RUN: llc -mtriple=amdgcn--amdpal -mcpu=gfx803 -run-pass=simple-register-coalescing -o - %s | FileCheck -check-prefix=GCN %s
+
+# With one version of the D48102 fix, this test failed with
+# Assertion failed: (ValNo && "CopyMI input register not live"), function reMaterializeTrivialDef, file ../lib/CodeGen/RegisterCoalescer.cpp, line 1107.
+
+# GCN: {{^body}}
+
+--- |
+  ; ModuleID = 'bugpoint-reduced-simplified.bc'
+  target datalayout = "e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5"
+  target triple = "amdgcn--amdpal"
+  
+  ; Function Attrs: nounwind readnone speculatable
+  declare float @llvm.minnum.f32(float, float) #0
+  
+  ; Function Attrs: nounwind
+  define dllexport amdgpu_cs void @_amdgpu_cs_main(<3 x i32>) local_unnamed_addr #1 !spirv.ExecutionModel !1 {
+  .entry:
+    br i1 undef, label %4, label %1, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:1:                                      ; preds = %.entry
+    br i1 undef, label %3, label %2, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:2:                                      ; preds = %1
+    br label %3, !structurizecfg.uniform !2
+  
+  ; <label>:3:                                      ; preds = %2, %1
+    br i1 undef, label %.lr.ph2597, label %4, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  .lr.ph2597:                                       ; preds = %3
+    br label %4, !structurizecfg.uniform !2
+  
+  ; <label>:4:                                      ; preds = %.lr.ph2597, %3, %.entry
+    %5 = shufflevector <3 x i32> %0, <3 x i32> undef, <2 x i32> <i32 0, i32 1>
+    %6 = uitofp <2 x i32> %5 to <2 x float>
+    %7 = fadd reassoc nnan arcp contract <2 x float> %6, <float 5.000000e-01, float 5.000000e-01>
+    %8 = fmul reassoc nnan arcp contract <2 x float> zeroinitializer, %7
+    %x1.i = extractelement <2 x float> %8, i32 1
+    %9 = call float @llvm.amdgcn.fmed3.f32(float %x1.i, float 0.000000e+00, float 1.000000e+00) #5
+    %10 = insertelement <2 x float> undef, float %9, i32 1
+    %11 = fmul reassoc nnan arcp contract <2 x float> %10, zeroinitializer
+    %12 = fptoui <2 x float> %11 to <2 x i32>
+    %13 = sitofp <2 x i32> %12 to <2 x float>
+    %14 = fptoui <2 x float> %13 to <2 x i32>
+    %15 = lshr <2 x i32> %14, <i32 4, i32 4>
+    %16 = extractelement <2 x i32> %15, i32 0
+    %__llpc_global_proxy_r0.4.vec.insert = insertelement <4 x i32> undef, i32 %16, i32 1
+    br i1 undef, label %22, label %17, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:17:                                     ; preds = %4
+    br i1 undef, label %22, label %.lr.ph2577, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  .lr.ph2577:                                       ; preds = %17
+    br i1 undef, label %18, label %._crit_edge2563, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:18:                                     ; preds = %.lr.ph2577
+    br i1 undef, label %19, label %21, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:19:                                     ; preds = %18
+    br i1 undef, label %21, label %20, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:20:                                     ; preds = %19
+    br label %21, !structurizecfg.uniform !2
+  
+  ; <label>:21:                                     ; preds = %20, %19, %18
+    br label %._crit_edge2563, !structurizecfg.uniform !2
+  
+  ._crit_edge2563:                                  ; preds = %21, %.lr.ph2577
+    br label %22, !structurizecfg.uniform !2
+  
+  ; <label>:22:                                     ; preds = %._crit_edge2563, %17, %4
+    %__llpc_global_proxy_r0.0 = phi <4 x i32> [ %__llpc_global_proxy_r0.4.vec.insert, %4 ], [ zeroinitializer, %._crit_edge2563 ], [ zeroinitializer, %17 ]
+    br i1 undef, label %23, label %Flow2, !amdgpu.uniform !2
+  
+  ; <label>:23:                                     ; preds = %22
+    br i1 undef, label %24, label %._crit_edge2538, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:24:                                     ; preds = %23
+    br i1 undef, label %._crit_edge2515, label %25, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:25:                                     ; preds = %24
+    br i1 undef, label %26, label %28, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:26:                                     ; preds = %25
+    br i1 undef, label %27, label %28, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:27:                                     ; preds = %26
+    br label %28, !structurizecfg.uniform !2
+  
+  ; <label>:28:                                     ; preds = %27, %26, %25
+    br label %._crit_edge2515, !structurizecfg.uniform !2
+  
+  ._crit_edge2515:                                  ; preds = %28, %24
+    br label %._crit_edge2538, !structurizecfg.uniform !2
+  
+  Flow2:                                            ; preds = %._crit_edge2499, %22
+    %29 = phi <4 x i32> [ %50, %._crit_edge2499 ], [ undef, %22 ]
+    %30 = phi <4 x i32> [ %__llpc_global_proxy_r0.0.vec.insert326, %._crit_edge2499 ], [ %__llpc_global_proxy_r0.0, %22 ]
+    br label %51
+  
+  ._crit_edge2538:                                  ; preds = %._crit_edge2515, %23
+    %__llpc_global_proxy_r0.4.vec.extract349 = extractelement <4 x i32> %__llpc_global_proxy_r0.0, i32 1
+    %31 = mul i32 %__llpc_global_proxy_r0.4.vec.extract349, 7
+    br i1 undef, label %32, label %Flow1, !amdgpu.uniform !2
+  
+  ; <label>:32:                                     ; preds = %._crit_edge2538
+    %33 = call <4 x float> @llvm.amdgcn.buffer.load.format.v4f32(<4 x i32> undef, i32 %31, i32 0, i1 false, i1 false) #5
+    %bc2345 = bitcast <4 x float> %33 to <4 x i32>
+    %__llpc_global_proxy_r8.12.vec.extract17052472 = extractelement <4 x i32> %bc2345, i32 0
+    %34 = icmp eq i32 %__llpc_global_proxy_r8.12.vec.extract17052472, 0
+    %35 = xor i1 %34, true
+    %36 = call { i1, i64 } @llvm.amdgcn.if(i1 %35)
+    %37 = extractvalue { i1, i64 } %36, 0
+    %38 = extractvalue { i1, i64 } %36, 1
+    br i1 %37, label %39, label %Flow
+  
+  ; <label>:39:                                     ; preds = %32
+    br i1 undef, label %40, label %42, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:40:                                     ; preds = %39
+    br i1 undef, label %41, label %42, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:41:                                     ; preds = %40
+    br label %42, !structurizecfg.uniform !2
+  
+  Flow:                                             ; preds = %42, %32
+    call void @llvm.amdgcn.end.cf(i64 %38)
+    br label %._crit_edge2480
+  
+  ; <label>:42:                                     ; preds = %41, %40, %39
+    br label %Flow
+  
+  Flow1:                                            ; preds = %._crit_edge2480, %._crit_edge2538
+    %43 = phi <4 x i32> [ <i32 0, i32 0, i32 0, i32 undef>, %._crit_edge2480 ], [ zeroinitializer, %._crit_edge2538 ]
+    %__llpc_global_proxy_r0.0.vec.insert326 = insertelement <4 x i32> %__llpc_global_proxy_r0.0, i32 %31, i32 0
+    br label %._crit_edge2499
+  
+  ._crit_edge2480:                                  ; preds = %Flow
+    br label %Flow1
+  
+  ._crit_edge2499:                                  ; preds = %Flow1
+    %__llpc_global_proxy_r5.8.lcssa = phi <4 x i32> [ %43, %Flow1 ]
+    %44 = shufflevector <4 x i32> %__llpc_global_proxy_r5.8.lcssa, <4 x i32> undef, <3 x i32> <i32 0, i32 1, i32 2>
+    %45 = bitcast <3 x i32> %44 to <3 x float>
+    %46 = fadd reassoc nnan arcp contract <3 x float> %45, zeroinitializer
+    %47 = bitcast <3 x float> %46 to <3 x i32>
+    %48 = shufflevector <3 x i32> %47, <3 x i32> undef, <4 x i32> <i32 undef, i32 1, i32 undef, i32 undef>
+    %49 = shufflevector <4 x i32> undef, <4 x i32> %48, <4 x i32> <i32 0, i32 5, i32 undef, i32 3>
+    %50 = shufflevector <4 x i32> %49, <4 x i32> undef, <4 x i32> <i32 0, i32 1, i32 6, i32 3>
+    br label %Flow2
+  
+  ; <label>:51:                                     ; preds = %Flow2
+    %__llpc_global_proxy_r0.1 = phi <4 x i32> [ %30, %Flow2 ]
+    %__llpc_global_proxy_r6.9 = phi <4 x i32> [ %29, %Flow2 ]
+    br i1 undef, label %55, label %52, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:52:                                     ; preds = %51
+    br i1 undef, label %.lr.ph2463, label %._crit_edge2464, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  .lr.ph2463:                                       ; preds = %52
+    br i1 undef, label %._crit_edge2446, label %53, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:53:                                     ; preds = %.lr.ph2463
+    br label %._crit_edge2446, !structurizecfg.uniform !2
+  
+  ._crit_edge2446:                                  ; preds = %53, %.lr.ph2463
+    br label %._crit_edge2464, !structurizecfg.uniform !2
+  
+  ._crit_edge2464:                                  ; preds = %._crit_edge2446, %52
+    br i1 undef, label %55, label %.lr.ph2434, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  .lr.ph2434:                                       ; preds = %._crit_edge2464
+    br i1 undef, label %._crit_edge, label %54, !amdgpu.uniform !2, !structurizecfg.uniform !2
+  
+  ; <label>:54:                                     ; preds = %.lr.ph2434
+    br label %._crit_edge, !structurizecfg.uniform !2
+  
+  ._crit_edge:                                      ; preds = %54, %.lr.ph2434
+    br label %55, !structurizecfg.uniform !2
+  
+  ; <label>:55:                                     ; preds = %51, %._crit_edge2464, %._crit_edge
+    %__llpc_global_proxy_r0.8.vec.extract369 = extractelement <4 x i32> %__llpc_global_proxy_r0.1, i32 2
+    %56 = call <4 x float> @llvm.amdgcn.image.load.3d.v4f32.i32(i32 15, i32 undef, i32 undef, i32 %__llpc_global_proxy_r0.8.vec.extract369, <8 x i32> undef, i32 0, i32 0) #5
+    %57 = shufflevector <4 x float> %56, <4 x float> undef, <3 x i32> <i32 0, i32 1, i32 2>
+    %58 = fadd reassoc nnan arcp contract <3 x float> %57, zeroinitializer
+    %59 = bitcast <3 x float> %58 to <3 x i32>
+    %60 = extractelement <3 x i32> %59, i32 1
+    store i32 %60, i32 addrspace(3)* undef, align 4
+    ret void
+  }
+  
+  ; Function Attrs: nounwind readonly
+  declare <4 x float> @llvm.amdgcn.image.load.3d.v4f32.i32(i32, i32, i32, i32, <8 x i32>, i32, i32) #2
+  
+  ; Function Attrs: nounwind readonly
+  declare <4 x float> @llvm.amdgcn.buffer.load.format.v4f32(<4 x i32>, i32, i32, i1, i1) #2
+  
+  ; Function Attrs: nounwind readnone speculatable
+  declare float @llvm.amdgcn.fmed3.f32(float, float, float) #0
+  
+  ; Function Attrs: convergent nounwind
+  declare { i1, i64 } @llvm.amdgcn.if(i1) #3
+  
+  ; Function Attrs: convergent nounwind
+  declare { i1, i64 } @llvm.amdgcn.else(i64) #3
+  
+  ; Function Attrs: convergent nounwind readnone
+  declare i64 @llvm.amdgcn.break(i64) #4
+  
+  ; Function Attrs: convergent nounwind readnone
+  declare i64 @llvm.amdgcn.if.break(i1, i64) #4
+  
+  ; Function Attrs: convergent nounwind readnone
+  declare i64 @llvm.amdgcn.else.break(i64, i64) #4
+  
+  ; Function Attrs: convergent nounwind
+  declare i1 @llvm.amdgcn.loop(i64) #3
+  
+  ; Function Attrs: convergent nounwind
+  declare void @llvm.amdgcn.end.cf(i64) #3
+  
+  ; Function Attrs: nounwind
+  declare void @llvm.stackprotector(i8*, i8**) #5
+  
+  attributes #0 = { nounwind readnone speculatable "target-cpu"="gfx803" }
+  attributes #1 = { nounwind "target-cpu"="gfx803" }
+  attributes #2 = { nounwind readonly "target-cpu"="gfx803" }
+  attributes #3 = { convergent nounwind }
+  attributes #4 = { convergent nounwind readnone }
+  attributes #5 = { nounwind }
+  
+  !amdgpu.pal.metadata = !{!0}
+  
+  !0 = !{i32 268435482, i32 1, i32 268435488, i32 -1, i32 268435480, i32 -449952542, i32 268435481, i32 -841033859, i32 268435538, i32 64, i32 268435539, i32 0, i32 11794, i32 2883584, i32 11795, i32 6022, i32 11783, i32 3, i32 11784, i32 2, i32 11785, i32 12, i32 268435530, i32 0, i32 268435495, i32 0, i32 268435502, i32 0, i32 268435509, i32 256, i32 268435516, i32 104, i32 268435456, i32 -1023767305, i32 268435457, i32 1054862382, i32 11840, i32 268435456, i32 11842, i32 0}
+  !1 = !{i32 5}
+  !2 = !{}
+
+...
+---
+name:            _amdgpu_cs_main
+alignment:       0
+exposesReturnsTwice: false
+legalized:       false
+regBankSelected: false
+selected:        false
+failedISel:      false
+tracksRegLiveness: true
+registers:       
+  - { id: 0, class: sreg_128, preferred-register: '' }
+  - { id: 1, class: sreg_128, preferred-register: '' }
+  - { id: 2, class: sreg_128, preferred-register: '' }
+  - { id: 3, class: sreg_128, preferred-register: '' }
+  - { id: 4, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 5, class: sreg_64, preferred-register: '' }
+  - { id: 6, class: sreg_128, preferred-register: '' }
+  - { id: 7, class: sreg_128, preferred-register: '' }
+  - { id: 8, class: sreg_128, preferred-register: '' }
+  - { id: 9, class: sreg_128, preferred-register: '' }
+  - { id: 10, class: sreg_128, preferred-register: '' }
+  - { id: 11, class: vgpr_32, preferred-register: '' }
+  - { id: 12, class: vgpr_32, preferred-register: '' }
+  - { id: 13, class: vgpr_32, preferred-register: '' }
+  - { id: 14, class: sreg_128, preferred-register: '' }
+  - { id: 15, class: sreg_128, preferred-register: '' }
+  - { id: 16, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 17, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 18, class: vgpr_32, preferred-register: '' }
+  - { id: 19, class: vgpr_32, preferred-register: '' }
+  - { id: 20, class: vgpr_32, preferred-register: '' }
+  - { id: 21, class: vgpr_32, preferred-register: '' }
+  - { id: 22, class: vgpr_32, preferred-register: '' }
+  - { id: 23, class: vgpr_32, preferred-register: '' }
+  - { id: 24, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 25, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 26, class: sreg_32, preferred-register: '' }
+  - { id: 27, class: sreg_128, preferred-register: '' }
+  - { id: 28, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 29, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 30, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 31, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 32, class: sreg_128, preferred-register: '' }
+  - { id: 33, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 34, class: sreg_128, preferred-register: '' }
+  - { id: 35, class: sreg_128, preferred-register: '' }
+  - { id: 36, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 37, class: sreg_128, preferred-register: '' }
+  - { id: 38, class: sreg_128, preferred-register: '' }
+  - { id: 39, class: sreg_128, preferred-register: '' }
+  - { id: 40, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 41, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 42, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 43, class: sreg_128, preferred-register: '' }
+  - { id: 44, class: vreg_128, preferred-register: '' }
+  - { id: 45, class: vgpr_32, preferred-register: '' }
+  - { id: 46, class: sreg_128, preferred-register: '' }
+  - { id: 47, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 48, class: vgpr_32, preferred-register: '' }
+  - { id: 49, class: sreg_64, preferred-register: '$vcc' }
+  - { id: 50, class: sreg_128, preferred-register: '' }
+  - { id: 51, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 52, class: sreg_128, preferred-register: '' }
+  - { id: 53, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 54, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 55, class: vgpr_32, preferred-register: '' }
+  - { id: 56, class: vgpr_32, preferred-register: '' }
+  - { id: 57, class: vgpr_32, preferred-register: '' }
+  - { id: 58, class: vgpr_32, preferred-register: '' }
+  - { id: 59, class: vgpr_32, preferred-register: '' }
+  - { id: 60, class: vgpr_32, preferred-register: '' }
+  - { id: 61, class: vgpr_32, preferred-register: '' }
+  - { id: 62, class: vgpr_32, preferred-register: '' }
+  - { id: 63, class: vgpr_32, preferred-register: '' }
+  - { id: 64, class: vgpr_32, preferred-register: '' }
+  - { id: 65, class: sreg_128, preferred-register: '' }
+  - { id: 66, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 67, class: vreg_128, preferred-register: '' }
+  - { id: 68, class: vreg_128, preferred-register: '' }
+  - { id: 69, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 70, class: vreg_128, preferred-register: '' }
+  - { id: 71, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 72, class: vreg_128, preferred-register: '' }
+  - { id: 73, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 74, class: sreg_256, preferred-register: '' }
+  - { id: 75, class: vgpr_32, preferred-register: '' }
+  - { id: 76, class: vgpr_32, preferred-register: '' }
+  - { id: 77, class: vgpr_32, preferred-register: '' }
+  - { id: 78, class: vgpr_32, preferred-register: '' }
+  - { id: 79, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 80, class: vgpr_32, preferred-register: '' }
+  - { id: 81, class: vreg_128, preferred-register: '' }
+  - { id: 82, class: vgpr_32, preferred-register: '' }
+  - { id: 83, class: vgpr_32, preferred-register: '' }
+  - { id: 84, class: vreg_128, preferred-register: '' }
+  - { id: 85, class: vgpr_32, preferred-register: '' }
+  - { id: 86, class: vgpr_32, preferred-register: '' }
+  - { id: 87, class: vreg_128, preferred-register: '' }
+  - { id: 88, class: vreg_128, preferred-register: '' }
+  - { id: 89, class: vreg_128, preferred-register: '' }
+  - { id: 90, class: vreg_128, preferred-register: '' }
+  - { id: 91, class: vgpr_32, preferred-register: '' }
+  - { id: 92, class: vgpr_32, preferred-register: '' }
+  - { id: 93, class: vreg_128, preferred-register: '' }
+  - { id: 94, class: vreg_128, preferred-register: '' }
+  - { id: 95, class: vgpr_32, preferred-register: '' }
+  - { id: 96, class: vreg_128, preferred-register: '' }
+  - { id: 97, class: vreg_128, preferred-register: '' }
+  - { id: 98, class: vreg_128, preferred-register: '' }
+  - { id: 99, class: vgpr_32, preferred-register: '' }
+  - { id: 100, class: vreg_128, preferred-register: '' }
+  - { id: 101, class: vreg_128, preferred-register: '' }
+  - { id: 102, class: vreg_128, preferred-register: '' }
+  - { id: 103, class: vreg_128, preferred-register: '' }
+  - { id: 104, class: vreg_128, preferred-register: '' }
+  - { id: 105, class: vreg_128, preferred-register: '' }
+  - { id: 106, class: vreg_128, preferred-register: '' }
+  - { id: 107, class: sreg_64, preferred-register: '' }
+liveins:         
+  - { reg: '$vgpr0', virtual-reg: '%11' }
+  - { reg: '$vgpr1', virtual-reg: '%12' }
+  - { reg: '$vgpr2', virtual-reg: '%13' }
+frameInfo:       
+  isFrameAddressTaken: false
+  isReturnAddressTaken: false
+  hasStackMap:     false
+  hasPatchPoint:   false
+  stackSize:       0
+  offsetAdjustment: 0
+  maxAlignment:    0
+  adjustsStack:    false
+  hasCalls:        false
+  stackProtector:  ''
+  maxCallFrameSize: 4294967295
+  hasOpaqueSPAdjustment: false
+  hasVAStart:      false
+  hasMustTailInVarArgFunc: false
+  localFrameSize:  0
+  savePoint:       ''
+  restorePoint:    ''
+fixedStack:      
+stack:           
+constants:       
+body:             |
+  bb.0..entry:
+    successors: %bb.5(0x40000000), %bb.1(0x40000000)
+    liveins: $vgpr0, $vgpr1, $vgpr2
+  
+    S_CBRANCH_SCC1 %bb.5, implicit undef $scc
+    S_BRANCH %bb.1
+  
+  bb.1 (%ir-block.1):
+    successors: %bb.3(0x40000000), %bb.2(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.3, implicit undef $scc
+    S_BRANCH %bb.2
+  
+  bb.2 (%ir-block.2):
+    successors: %bb.3(0x80000000)
+  
+  
+  bb.3 (%ir-block.3):
+    successors: %bb.4(0x40000000), %bb.5(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.5, implicit undef $scc
+    S_BRANCH %bb.4
+  
+  bb.4..lr.ph2597:
+    successors: %bb.5(0x80000000)
+  
+  
+  bb.5 (%ir-block.4):
+    successors: %bb.6(0x40000000), %bb.7(0x40000000)
+  
+    %19:vgpr_32 = V_MUL_F32_e32 0, undef %20:vgpr_32, implicit $exec
+    %21:vgpr_32 = V_CVT_U32_F32_e32 killed %19, implicit $exec
+    %22:vgpr_32 = V_CVT_F32_I32_e32 killed %21, implicit $exec
+    %23:vgpr_32 = V_CVT_U32_F32_e32 killed %22, implicit $exec
+    %83:vgpr_32 = V_LSHRREV_B32_e32 4, killed %23, implicit $exec
+    S_CBRANCH_SCC0 %bb.7, implicit undef $scc
+  
+  bb.6:
+    successors: %bb.15(0x80000000)
+  
+    undef %84.sub1:vreg_128 = COPY killed %83
+    %105:vreg_128 = COPY killed %84
+    S_BRANCH %bb.15
+  
+  bb.7 (%ir-block.17):
+    successors: %bb.8(0x40000000), %bb.9(0x40000000)
+  
+    S_CBRANCH_SCC0 %bb.9, implicit undef $scc
+  
+  bb.8:
+    successors: %bb.15(0x80000000)
+  
+    %33:sreg_32_xm0 = S_MOV_B32 0
+    undef %34.sub0:sreg_128 = COPY %33
+    %34.sub1:sreg_128 = COPY %33
+    %34.sub2:sreg_128 = COPY %33
+    %34.sub3:sreg_128 = COPY killed %33
+    %88:vreg_128 = COPY killed %34
+    %105:vreg_128 = COPY killed %88
+    S_BRANCH %bb.15
+  
+  bb.9..lr.ph2577:
+    successors: %bb.10(0x40000000), %bb.14(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.14, implicit undef $scc
+    S_BRANCH %bb.10
+  
+  bb.10 (%ir-block.18):
+    successors: %bb.11(0x40000000), %bb.13(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.13, implicit undef $scc
+    S_BRANCH %bb.11
+  
+  bb.11 (%ir-block.19):
+    successors: %bb.13(0x40000000), %bb.12(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.13, implicit undef $scc
+    S_BRANCH %bb.12
+  
+  bb.12 (%ir-block.20):
+    successors: %bb.13(0x80000000)
+  
+  
+  bb.13 (%ir-block.21):
+    successors: %bb.14(0x80000000)
+  
+  
+  bb.14.._crit_edge2563:
+    successors: %bb.15(0x80000000)
+  
+    %36:sreg_32_xm0 = S_MOV_B32 0
+    undef %37.sub0:sreg_128 = COPY %36
+    %37.sub1:sreg_128 = COPY %36
+    %37.sub2:sreg_128 = COPY %36
+    %37.sub3:sreg_128 = COPY killed %36
+    %35:sreg_128 = COPY killed %37
+    %89:vreg_128 = COPY killed %35
+    %105:vreg_128 = COPY killed %89
+  
+  bb.15 (%ir-block.22):
+    successors: %bb.17(0x40000000), %bb.35(0x40000000)
+  
+    %87:vreg_128 = COPY killed %105
+    S_CBRANCH_SCC0 %bb.17, implicit undef $scc
+  
+  bb.35:
+    successors: %bb.16(0x80000000)
+  
+    %106:vreg_128 = COPY killed %87
+  
+  bb.16.Flow2:
+    successors: %bb.25(0x80000000)
+  
+    %93:vreg_128 = COPY killed %106
+    S_BRANCH %bb.25
+  
+  bb.17.._crit_edge2538:
+    successors: %bb.18(0x40000000), %bb.22(0x40000000)
+  
+    %92:vgpr_32 = V_MUL_LO_I32 %87.sub1, target-flags(amdgpu-gotprel32-lo) 7, implicit $exec
+    S_CBRANCH_SCC1 %bb.22, implicit undef $scc
+    S_BRANCH %bb.18
+  
+  bb.18 (%ir-block.32):
+    successors: %bb.19(0x40000000), %bb.21(0x40000000)
+  
+    %44:vreg_128 = BUFFER_LOAD_FORMAT_XYZW_IDXEN killed %92, undef %46:sreg_128, 0, 0, 0, 0, 0, implicit $exec :: (dereferenceable load 16 from constant-pool, align 1, addrspace 4)
+    %49:sreg_64 = V_CMP_NE_U32_e64 target-flags(amdgpu-gotprel) 0, killed %44.sub0, implicit $exec
+    %5:sreg_64 = COPY $exec, implicit-def $exec
+    %107:sreg_64 = S_AND_B64 %5, %49, implicit-def dead $scc
+    $exec = S_MOV_B64_term killed %107
+    SI_MASK_BRANCH %bb.21, implicit $exec
+    S_BRANCH %bb.19
+  
+  bb.19 (%ir-block.39):
+    successors: %bb.20(0x40000000), %bb.21(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.21, implicit undef $scc
+  
+  bb.20 (%ir-block.40):
+    successors: %bb.21(0x80000000)
+  
+  
+  bb.21.Flow:
+    successors: %bb.23(0x80000000)
+  
+    $exec = S_OR_B64 $exec, killed %5, implicit-def $scc
+    S_BRANCH %bb.23
+  
+  bb.22.Flow1:
+    successors: %bb.24(0x80000000)
+  
+    %90:vreg_128 = COPY killed %87
+    %90.sub0:vreg_128 = COPY undef %92
+    S_BRANCH %bb.24
+  
+  bb.23.._crit_edge2480:
+    successors: %bb.22(0x80000000)
+  
+    S_BRANCH %bb.22
+  
+  bb.24.._crit_edge2499:
+    successors: %bb.16(0x80000000)
+  
+    %106:vreg_128 = COPY killed %90
+    S_BRANCH %bb.16
+  
+  bb.25 (%ir-block.51):
+    successors: %bb.34(0x40000000), %bb.26(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.34, implicit undef $scc
+    S_BRANCH %bb.26
+  
+  bb.26 (%ir-block.52):
+    successors: %bb.27(0x40000000), %bb.30(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.30, implicit undef $scc
+    S_BRANCH %bb.27
+  
+  bb.27..lr.ph2463:
+    successors: %bb.29(0x40000000), %bb.28(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.29, implicit undef $scc
+    S_BRANCH %bb.28
+  
+  bb.28 (%ir-block.53):
+    successors: %bb.29(0x80000000)
+  
+  
+  bb.29.._crit_edge2446:
+    successors: %bb.30(0x80000000)
+  
+  
+  bb.30.._crit_edge2464:
+    successors: %bb.34(0x40000000), %bb.31(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.34, implicit undef $scc
+    S_BRANCH %bb.31
+  
+  bb.31..lr.ph2434:
+    successors: %bb.33(0x40000000), %bb.32(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.33, implicit undef $scc
+    S_BRANCH %bb.32
+  
+  bb.32 (%ir-block.54):
+    successors: %bb.33(0x80000000)
+  
+  
+  bb.33.._crit_edge:
+    successors: %bb.34(0x80000000)
+  
+  
+  bb.34 (%ir-block.55):
+    undef %72.sub2:vreg_128 = COPY killed %93.sub2
+    %73:sreg_32_xm0 = S_MOV_B32 0
+    undef %74.sub0:sreg_256 = COPY %73
+    %74.sub1:sreg_256 = COPY %73
+    %74.sub2:sreg_256 = COPY %73
+    %74.sub3:sreg_256 = COPY %73
+    %74.sub4:sreg_256 = COPY %73
+    %74.sub5:sreg_256 = COPY %73
+    %74.sub6:sreg_256 = COPY %73
+    %74.sub7:sreg_256 = COPY killed %73
+    %75:vgpr_32 = IMAGE_LOAD_V1_V4 killed %72, killed %74, 2, -1, 0, 0, 0, 0, 0, 0, implicit $exec :: (dereferenceable load 16 from constant-pool, addrspace 4)
+    %78:vgpr_32 = V_ADD_F32_e32 0, killed %75, implicit $exec
+    $m0 = S_MOV_B32 -1
+    DS_WRITE_B32 undef %80:vgpr_32, killed %78, 0, 0, implicit $m0, implicit $exec :: (store 4 into `i32 addrspace(3)* undef`, addrspace 3)
+    S_ENDPGM
+
+...
