@@ -1382,6 +1382,13 @@ void SplitEditor::rewriteAssigned(bool ExtendRanges) {
       //   %1 = COPY %0
       if (S.empty())
         continue;
+      // Check a similar situation with <def, read-undef>'s where there are
+      // potentially multpiple paths to the use, but all are only partial
+      // defs <def, read-undef> that don't define the subrange lane, or are
+      // IMPLICIT_DEFs - this is a corner case extension to the previous case
+      if (LI.isSubRangeUndefined(S.LaneMask, MRI, *LIS.getSlotIndexes()))
+        continue;
+
       SubLRC.reset(&VRM.getMachineFunction(), LIS.getSlotIndexes(), &MDT,
                    &LIS.getVNInfoAllocator());
       SmallVector<SlotIndex, 4> Undefs;

@@ -780,6 +780,13 @@ namespace llvm {
                                const MachineRegisterInfo &MRI,
                                const SlotIndexes &Indexes) const;
 
+    /// For a given lane mask @p LaneMask, determine if there are any defines
+    /// Ignore any defines marked as undef for the lane and also ignore any
+    /// IMPLICIT_DEFs
+    bool isSubRangeUndefined(LaneBitmask LaneMask,
+                             const MachineRegisterInfo &MRI,
+                             const SlotIndexes &Indexes) const;
+
     /// Refines the subranges to support \p LaneMask. This may only be called
     /// for LI.hasSubrange()==true. Subregister ranges are split or created
     /// until \p LaneMask can be matched exactly. \p Mod is executed on the

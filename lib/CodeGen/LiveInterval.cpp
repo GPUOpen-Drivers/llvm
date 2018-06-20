@@ -941,6 +941,28 @@ void LiveInterval::computeSubRangeUndefs(SmallVectorImpl<SlotIndex> &Undefs,
   }
 }
 
+bool LiveInterval::isSubRangeUndefined(LaneBitmask LaneMask,
+                                       const MachineRegisterInfo &MRI,
+                                       const SlotIndexes &Indexes) const {
+  assert(TargetRegisterInfo::isVirtualRegister(reg));
+  LaneBitmask VRegMask = MRI.getMaxLaneMaskForVReg(reg);
+  assert((VRegMask & LaneMask).any());
+  const TargetRegisterInfo &TRI = *MRI.getTargetRegisterInfo();
+  for (const MachineOperand &MO : MRI.def_operands(reg)) {
+    unsigned SubReg = MO.getSubReg();
+    if (SubReg == 0) { // This must be a full copy and thus a true def
+      const MachineInstr &MI = *MO.getParent();
+      if (MI.isImplicitDef()) // Not a true def so we can ignore
+        continue;
+      return false;
+    }
+    LaneBitmask DefMask = TRI.getSubRegIndexLaneMask(SubReg);
+    if ((DefMask & LaneMask).any()) // A true def
+      return false;
+  }
+  return true; // Didn't find any true defs for this SubRange/SubReg
+}
+
 raw_ostream& llvm::operator<<(raw_ostream& OS, const LiveRange::Segment &S) {
   return OS << '[' << S.start << ',' << S.end << ':' << S.valno->id << ')';
 }
