@@ -36,7 +36,7 @@ defm EXP_DONE : EXP_m<1, AMDGPUexport_done>;
 // Used to inject printing of "_e32" suffix for VI (there are "_e64" variants for VI)
 def VINTRPDst : VINTRPDstOperand <VGPR_32>;
 
-let Uses = [M0, EXEC] in {
+let Uses = [M0, EXEC], VALU = 1 in {
 
 // FIXME: Specify SchedRW for VINTRP insturctions.
 
@@ -81,7 +81,8 @@ defm V_INTERP_MOV_F32 : VINTRP_m <
   [(set f32:$vdst, (AMDGPUinterp_mov (i32 imm:$vsrc), (i32 imm:$attrchan),
                                      (i32 imm:$attr)))]>;
 
-} // End Uses = [M0, EXEC]
+
+} // End Uses = [M0, EXEC], VALU = 1
 
 //===----------------------------------------------------------------------===//
 // Pseudo Instructions
