@@ -792,7 +792,8 @@ private:
 
   Value *simplifyAMDGCNMemoryIntrinsicDemanded(IntrinsicInst *II,
                                                APInt DemandedElts,
-                                               int DmaskIdx = -1);
+                                               int DmaskIdx = -1,
+                                               int TFEIdx = -1);
 
   Value *SimplifyDemandedVectorElts(Value *V, APInt DemandedElts,
                                     APInt &UndefElts, unsigned Depth = 0);
