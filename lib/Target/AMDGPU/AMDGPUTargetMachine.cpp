@@ -814,6 +814,7 @@ bool GCNPassConfig::addILPOpts() {
 bool GCNPassConfig::addInstSelector() {
   AMDGPUPassConfig::addInstSelector();
   addPass(createSILowerI1CopiesPass());
+  addPass(createSIAddIMGInitPass());
   addPass(&SIFixSGPRCopiesID);
   return false;
 }

@@ -945,10 +945,25 @@ InstCombiner::simplifyShrShlDemandedBits(Instruction *Shr, const APInt &ShrOp1,
 /// Implement SimplifyDemandedVectorElts for amdgcn buffer and image intrinsics.
 Value *InstCombiner::simplifyAMDGCNMemoryIntrinsicDemanded(IntrinsicInst *II,
                                                            APInt DemandedElts,
-                                                           int DMaskIdx) {
+                                                           int DMaskIdx,
+                                                           int TFEIdx) {
   unsigned VWidth = II->getType()->getVectorNumElements();
   if (VWidth == 1)
     return nullptr;
+
+  ConstantInt *TFEEnable = nullptr;
+  ConstantInt *LWEEnable = nullptr;
+  bool TFELWEEnabled = false;
+  if (TFEIdx > 0) {
+    TFEEnable = dyn_cast<ConstantInt>(II->getArgOperand(TFEIdx));
+    LWEEnable = dyn_cast<ConstantInt>(II->getArgOperand(TFEIdx + 1));
+    if (TFEEnable && LWEEnable) {
+      TFELWEEnabled = TFEEnable->getZExtValue() | LWEEnable->getZExtValue();
+    }
+  }
+
+  if (TFELWEEnabled)
+    return nullptr; // TFE not yet supported
 
   ConstantInt *NewDMask = nullptr;
 
@@ -1598,7 +1613,8 @@ Value *InstCombiner::SimplifyDemandedVectorElts(Value *V, APInt DemandedElts,
       return simplifyAMDGCNMemoryIntrinsicDemanded(II, DemandedElts);
     default: {
       if (getAMDGPUImageDMaskIntrinsic(II->getIntrinsicID()))
-        return simplifyAMDGCNMemoryIntrinsicDemanded(II, DemandedElts, 0);
+        return simplifyAMDGCNMemoryIntrinsicDemanded(
+            II, DemandedElts, 0, II->getNumArgOperands() - 2);
 
       break;
     }

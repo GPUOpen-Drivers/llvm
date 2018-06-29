@@ -2944,6 +2944,42 @@ bool SIInstrInfo::verifyInstruction(const MachineInstr &MI,
     }
   }
 
+  // Verify MIMG
+  if (isMIMG(MI.getOpcode()) && !get(MI.getOpcode()).mayStore()) {
+    // Ensure that the return type used is large enough for all the options
+    // being used TFE/LWE require an extra result register.
+    const MachineOperand *DMask = getNamedOperand(MI, AMDGPU::OpName::dmask);
+    if (DMask) {
+      uint64_t DMaskImm = DMask->getImm();
+      uint32_t RegCount = isGather4(MI.getOpcode()) ? 4
+                                                    : countPopulation(DMaskImm);
+      const MachineOperand *TFE = getNamedOperand(MI, AMDGPU::OpName::tfe);
+      const MachineOperand *LWE = getNamedOperand(MI, AMDGPU::OpName::lwe);
+      const MachineOperand *D16 = getNamedOperand(MI, AMDGPU::OpName::d16);
+      bool IsD16 = D16 ?  D16->getImm() : false;
+      
+      if ((LWE && LWE->getImm()) || (TFE && TFE->getImm()))
+        RegCount += IsD16 ? 2 : 1;
+
+      // Adjust for D16 variants
+      bool Packed = !ST.hasUnpackedD16VMem();
+      if (IsD16 && Packed) RegCount = (RegCount + 1) >> 1;
+
+      const uint32_t DstIdx = AMDGPU::getNamedOperandIdx(MI.getOpcode(),
+                                                         AMDGPU::OpName::vdata);
+      const MachineOperand &Dst = MI.getOperand(DstIdx);
+      if (Dst.isReg()) {
+        const TargetRegisterClass *DstRC = getOpRegClass(MI, DstIdx);
+        uint32_t DstSize = RI.getRegSizeInBits(*DstRC) / 32;
+        if (RegCount > DstSize) {
+          ErrInfo =
+            "MIMG instruction returns too many registers for dst register class";
+          return false;
+        }
+      }
+    }
+  }
+
   // Verify VOP*. Ignore multiple sgpr operands on writelane.
   if (Desc.getOpcode() != AMDGPU::V_WRITELANE_B32
       && (isVOP1(MI) || isVOP2(MI) || isVOP3(MI) || isVOPC(MI) || isSDWA(MI))) {
