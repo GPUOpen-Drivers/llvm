@@ -216,6 +216,7 @@ SITargetLowering::SITargetLowering(const TargetMachine &TM,
 
   setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::v2f16, Custom);
   setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::v4f16, Custom);
+  setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::v8f16, Custom);
   setOperationAction(ISD::INTRINSIC_W_CHAIN, MVT::Other, Custom);
 
   setOperationAction(ISD::INTRINSIC_VOID, MVT::Other, Custom);
@@ -4612,6 +4613,22 @@ static bool parseCachePolicy(SDValue CachePolicy, SelectionDAG &DAG,
   return Value == 0;
 }
 
+static bool parseTexFail(SDValue TexFailCtrl, SelectionDAG &DAG,
+                         SDValue *TFE, SDValue *LWE) {
+  auto TexFailCtrlConst = dyn_cast<ConstantSDNode>(TexFailCtrl.getNode());
+  if (!TexFailCtrlConst)
+    return false;
+
+  uint64_t Value = TexFailCtrlConst->getZExtValue();
+  SDLoc DL(TexFailCtrlConst);
+  *TFE = DAG.getTargetConstant((Value & 0x1) ? 1 : 0, DL, MVT::i32);
+  Value &= ~(uint64_t)0x1;
+  *LWE = DAG.getTargetConstant((Value & 0x2) ? 1 : 0, DL, MVT::i32);
+  Value &= ~(uint64_t)0x2;
+
+  return Value == 0;
+}
+
 SDValue SITargetLowering::lowerImage(SDValue Op,
                                      const AMDGPU::ImageDimIntrinsicInfo *Intr,
                                      SelectionDAG &DAG) const {
@@ -4680,7 +4697,16 @@ SDValue SITargetLowering::lowerImage(SDValue Op,
 
         IsD16 = true;
         if (LoadVT.isVector() && Subtarget->hasUnpackedD16VMem())
-          ResultTypes[0] = (LoadVT == MVT::v2f16) ? MVT::v2i32 : MVT::v4i32;
+          ResultTypes[0] = (LoadVT == MVT::v2f16) ? MVT::v2i32 :
+                           (LoadVT == MVT::v4f16) ? MVT::v4i32 : MVT::v8i32;
+        else if (LoadVT.isVector() && LoadVT == MVT::v8f16)
+          // Rather than add lots of code to handle v8f16 for this case, just
+          // treat it as v4i32 - this is reasonable since this is only done for
+          // TFE/LWE support anyway and the result is a mixture of 4 packed
+          // 16 bit values and a 32 bit error condition (plus an unused 32 bit
+          // value) :
+          // [ Res0 : Res1 ][ Res2 : Res3 ][ ErrCode ][ unused ]
+          ResultTypes[0] = MVT::v4i32;
       }
 
       NumVDataDwords = (ResultTypes[0].getSizeInBits() + 31) / 32;
@@ -4779,9 +4805,10 @@ SDValue SITargetLowering::lowerImage(SDValue Op,
     CtrlIdx = AddrIdx + NumVAddrs + 3;
   }
 
+  SDValue TFE;
+  SDValue LWE;
   SDValue TexFail = Op.getOperand(CtrlIdx);
-  auto TexFailConst = dyn_cast<ConstantSDNode>(TexFail.getNode());
-  if (!TexFailConst || TexFailConst->getZExtValue() != 0)
+  if (!parseTexFail(TexFail, DAG, &TFE, &LWE))
     return Op;
 
   SDValue GLC;
@@ -4808,8 +4835,8 @@ SDValue SITargetLowering::lowerImage(SDValue Op,
   Ops.push_back(SLC);
   Ops.push_back(IsA16 &&  // a16 or r128
                 ST->hasFeature(AMDGPU::FeatureR128A16) ? True : False);
-  Ops.push_back(False); // tfe
-  Ops.push_back(False); // lwe
+  Ops.push_back(TFE); // tfe
+  Ops.push_back(LWE); // lwe
   Ops.push_back(DimInfo->DA ? True : False);
   if (BaseOpcode->HasD16)
     Ops.push_back(IsD16 ? True : False);
@@ -8864,6 +8891,7 @@ static unsigned SubIdx2Lane(unsigned Idx) {
   case AMDGPU::sub1: return 1;
   case AMDGPU::sub2: return 2;
   case AMDGPU::sub3: return 3;
+  case AMDGPU::sub4: return 4; // This might be returned when using TFE/LWE
   }
 }
 
@@ -8877,16 +8905,27 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
   if (D16Idx >= 0 && Node->getConstantOperandVal(D16Idx))
     return Node; // not implemented for D16
 
-  SDNode *Users[4] = { nullptr };
+  SDNode *Users[5] = { nullptr };
   unsigned Lane = 0;
   unsigned DmaskIdx = AMDGPU::getNamedOperandIdx(Opcode, AMDGPU::OpName::dmask) - 1;
   unsigned OldDmask = Node->getConstantOperandVal(DmaskIdx);
   unsigned NewDmask = 0;
+  unsigned TFEIdx = AMDGPU::getNamedOperandIdx(Opcode, AMDGPU::OpName::tfe) - 1;
+  unsigned LWEIdx = AMDGPU::getNamedOperandIdx(Opcode, AMDGPU::OpName::lwe) - 1;
+  unsigned UsesTFC = (Node->getConstantOperandVal(TFEIdx) ||
+                      Node->getConstantOperandVal(LWEIdx)) ? 1 : 0;
+  unsigned TFCLane = 0;
   bool HasChain = Node->getNumValues() > 1;
 
   if (OldDmask == 0) {
     // These are folded out, but on the chance it happens don't assert.
     return Node;
+  }
+
+  // Work out which is the TFE/LWE lane if that is enabled.
+  if (UsesTFC) {
+    unsigned OldBitsSet = countPopulation(OldDmask);
+    TFCLane = OldBitsSet;
   }
 
   // Try to figure out the used register components
@@ -8908,28 +8947,43 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
     // set, etc.
     Lane = SubIdx2Lane(I->getConstantOperandVal(1));
 
-    // Set which texture component corresponds to the lane.
-    unsigned Comp;
-    for (unsigned i = 0, Dmask = OldDmask; (i <= Lane) && (Dmask != 0); i++) {
-      Comp = countTrailingZeros(Dmask);
-      Dmask &= ~(1 << Comp);
+    // Check if the use is for the TFE/LWE generated result at VGPRn+1.
+    if (UsesTFC && Lane == TFCLane) {
+      Users[Lane] = *I;
+    } else {
+      // Set which texture component corresponds to the lane.
+      unsigned Comp;
+      for (unsigned i = 0, Dmask = OldDmask; (i <= Lane) && (Dmask != 0); i++) {
+        Comp = countTrailingZeros(Dmask);
+        Dmask &= ~(1 << Comp);
+      }
+
+      // Abort if we have more than one user per component.
+      if (Users[Lane])
+        return Node;
+
+      Users[Lane] = *I;
+      NewDmask |= 1 << Comp;
     }
-
-    // Abort if we have more than one user per component
-    if (Users[Lane])
-      return Node;
-
-    Users[Lane] = *I;
-    NewDmask |= 1 << Comp;
   }
 
+  // Don't allow 0 dmask, as hardware assumes one channel enabled.
+  bool NoChannels = !NewDmask;
+  if (NoChannels)
+    NewDmask = 1;
   // Abort if there's no change
   if (NewDmask == OldDmask)
     return Node;
 
   unsigned BitsSet = countPopulation(NewDmask);
 
-  int NewOpcode = AMDGPU::getMaskedMIMGOp(Node->getMachineOpcode(), BitsSet);
+  // Check for TFE or LWE - increase the number of channels by one to account
+  // for the extra return value
+  // This will need adjustment for D16 if this is also included in
+  // adjustWriteMask (this function) but at present D16 are excluded.
+  unsigned NewChannels = BitsSet + UsesTFC;
+
+  int NewOpcode = AMDGPU::getMaskedMIMGOp(Node->getMachineOpcode(), NewChannels);
   assert(NewOpcode != -1 &&
          NewOpcode != static_cast<int>(Node->getMachineOpcode()) &&
          "failed to find equivalent MIMG op");
@@ -8942,8 +8996,9 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
 
   MVT SVT = Node->getValueType(0).getVectorElementType().getSimpleVT();
 
-  MVT ResultVT = BitsSet == 1 ?
-    SVT : MVT::getVectorVT(SVT, BitsSet == 3 ? 4 : BitsSet);
+  MVT ResultVT = NewChannels == 1 ?
+    SVT : MVT::getVectorVT(SVT, NewChannels == 3 ? 4 :
+                           NewChannels == 5 ? 8 : NewChannels);
   SDVTList NewVTList = HasChain ?
     DAG.getVTList(ResultVT, MVT::Other) : DAG.getVTList(ResultVT);
 
@@ -8957,7 +9012,7 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
     DAG.ReplaceAllUsesOfValueWith(SDValue(Node, 1), SDValue(NewNode, 1));
   }
 
-  if (BitsSet == 1) {
+  if (NewChannels == 1) {
     assert(Node->hasNUsesOfValue(1, 0));
     SDNode *Copy = DAG.getMachineNode(TargetOpcode::COPY,
                                       SDLoc(Node), Users[Lane]->getValueType(0),
@@ -8967,19 +9022,24 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
   }
 
   // Update the users of the node with the new indices
-  for (unsigned i = 0, Idx = AMDGPU::sub0; i < 4; ++i) {
+  for (unsigned i = 0, Idx = AMDGPU::sub0; i < 5; ++i) {
     SDNode *User = Users[i];
-    if (!User)
-      continue;
-
-    SDValue Op = DAG.getTargetConstant(Idx, SDLoc(User), MVT::i32);
-    DAG.UpdateNodeOperands(User, SDValue(NewNode, 0), Op);
+    if (!User) {
+      // Handle the special case of NoChannels. We set NewDmask to 1 above, but
+      // Users[0] is still nullptr because channel 0 doesn't really have a use.
+      if (i || !NoChannels)
+        continue;
+    } else {
+      SDValue Op = DAG.getTargetConstant(Idx, SDLoc(User), MVT::i32);
+      DAG.UpdateNodeOperands(User, SDValue(NewNode, 0), Op);
+    }
 
     switch (Idx) {
     default: break;
     case AMDGPU::sub0: Idx = AMDGPU::sub1; break;
     case AMDGPU::sub1: Idx = AMDGPU::sub2; break;
     case AMDGPU::sub2: Idx = AMDGPU::sub3; break;
+    case AMDGPU::sub3: Idx = AMDGPU::sub4; break;
     }
   }
 

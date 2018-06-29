@@ -821,6 +821,7 @@ bool GCNPassConfig::addInstSelector() {
   AMDGPUPassConfig::addInstSelector();
   addPass(&SIFixSGPRCopiesID);
   addPass(createSILowerI1CopiesPass());
+  addPass(createSIAddIMGInitPass());
   return false;
 }
 
