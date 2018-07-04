@@ -88,10 +88,7 @@ enum : uint64_t {
   IsPacked = UINT64_C(1) << 49,
 
   // Is a D16 buffer instruction.
-  D16Buf = UINT64_C(1) << 50,
-
-  // Uses floating point double precision rounding mode
-  FPDPRounding = UINT64_C(1) << 51
+  D16Buf = UINT64_C(1) << 50
 };
 
 // v_cmp_class_* etc. use a 10-bit mask for what operation is checked.

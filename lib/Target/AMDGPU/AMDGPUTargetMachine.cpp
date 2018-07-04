@@ -136,13 +136,6 @@ static cl::opt<bool> EnableLowerKernelArguments(
   cl::init(true),
   cl::Hidden);
 
-// Enable Mode register optimization
-static cl::opt<bool> EnableSIModeRegisterPass(
-  "amdgpu-mode-register",
-  cl::desc("Enable mode register pass"),
-  cl::init(true),
-  cl::Hidden);
-
 extern "C" void LLVMInitializeAMDGPUTarget() {
   // Register the target
   RegisterTargetMachine<R600TargetMachine> X(getTheAMDGPUTarget());
@@ -178,7 +171,6 @@ extern "C" void LLVMInitializeAMDGPUTarget() {
   initializeAMDGPUUnifyMetadataPass(*PR);
   initializeSIAnnotateControlFlowPass(*PR);
   initializeSIInsertWaitcntsPass(*PR);
-  initializeSIModeRegisterPass(*PR);
   initializeSIWholeQuadModePass(*PR);
   initializeSILowerControlFlowPass(*PR);
   initializeSIInsertSkipsPass(*PR);
@@ -895,7 +887,6 @@ void GCNPassConfig::addPreSched2() {
 }
 
 void GCNPassConfig::addPreEmitPass() {
-  addPass(createSIModeRegisterPass());
   // The hazard recognizer that runs as part of the post-ra scheduler does not
   // guarantee to be able handle all hazards correctly. This is because if there
   // are multiple scheduling regions in a basic block, the regions are scheduled
