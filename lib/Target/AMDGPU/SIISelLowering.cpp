@@ -8293,8 +8293,8 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
   unsigned DmaskIdx = AMDGPU::getNamedOperandIdx(Opcode, AMDGPU::OpName::dmask) - 1;
   unsigned OldDmask = Node->getConstantOperandVal(DmaskIdx);
   unsigned NewDmask = 0;
-  unsigned TFEIdx = DmaskIdx + 5;
-  unsigned LWEIdx = DmaskIdx + 6;
+  unsigned TFEIdx = AMDGPU::getNamedOperandIdx(Opcode, AMDGPU::OpName::tfe) - 1;
+  unsigned LWEIdx = AMDGPU::getNamedOperandIdx(Opcode, AMDGPU::OpName::lwe) - 1;
   unsigned UsesTFC = (Node->getConstantOperandVal(TFEIdx) ||
                       Node->getConstantOperandVal(LWEIdx)) ? 1 : 0;
   unsigned TFCLane = 0;
