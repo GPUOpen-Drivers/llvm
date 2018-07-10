@@ -107,6 +107,51 @@ define amdgpu_ps <4 x float> @test_waterfall_non_uniform_img_single_read(<8 x i3
   ret <4 x float> %r1
 }
 
+; GCN-LABEL: {{^}}test_multiple_groups:
+; GCN: {{^}}BB3_1:
+; GCN: v_readfirstlane_b32 [[VAL1:s[0-9]+]], [[VAL2:v[0-9]+]]
+; GCN: v_cmp_eq_u32_e64 [[EXEC:s[[0-9]+:[0-9]+]]], [[VAL1]], [[VAL2]]
+; GCN: s_and_saveexec_b64 [[EXEC]], [[EXEC]]
+; GCN: v_readlane_b32 [[RLVAL:s[0-9]+]], v{{[0-9]+}}, [[VAL1]]
+; GCN: v_mov_b32_e32 [[VVAL:v[0-9]+]], [[RLVAL]]
+; GCN: v_or_b32_e32 [[ACCUM:v[0-9]+]], [[ACCUM]], [[VVAL]]
+; GCN: s_xor_b64 exec, exec, [[EXEC]]
+; GCN: s_cbranch_execnz BB3_1
+; GCN: s_mov_b64 exec, s[{{[0-9]+:[0-9]+}}]
+; VI: flat_store_dword v[{{[0-9]+:[0-9]+}}], [[ACCUM]]
+; GFX9: global_store_dword v[{{[0-9]+:[0-9]+}}], [[ACCUM]], off
+; GCN: {{^}}BB3_3:
+; GCN: v_readfirstlane_b32 [[VAL2_1:s[0-9]+]], [[VAL2_2:v[0-9]+]]
+; GCN: v_cmp_eq_u32_e64 [[EXEC2:s[[0-9]+:[0-9]+]]], [[VAL2_1]], [[VAL2_2]]
+; GCN: s_and_saveexec_b64 [[EXEC2]], [[EXEC2]]
+; GCN: v_readlane_b32 [[RLVAL2:s[0-9]+]], v{{[0-9]+}}, [[VAL2_1]]
+; GCN: v_mov_b32_e32 [[VVAL2:v[0-9]+]], [[RLVAL2]]
+; GCN: v_or_b32_e32 [[ACCUM2:v[0-9]+]], [[ACCUM2]], [[VVAL2]]
+; GCN: s_xor_b64 exec, exec, [[EXEC2]]
+; GCN: s_cbranch_execnz BB3_3
+; GCN: s_mov_b64 exec, s[{{[0-9]+:[0-9]+}}]
+; VI: flat_store_dword v[{{[0-9]+:[0-9]+}}], [[ACCUM2]]
+; GFX9: global_store_dword v[{{[0-9]+:[0-9]+}}], [[ACCUM2]], off
+
+define amdgpu_ps void @test_multiple_groups(i32 addrspace(1)* inreg %out1, i32 addrspace(1)* inreg %out2,
+                                            i32 %idx1, i32 %idx2, i32 %val) #1 {
+  %wf_token = call i32 @llvm.amdgcn.waterfall.begin(i32 %idx1)
+  %readlane1 = call i32 @llvm.amdgcn.waterfall.readfirstlane.i32.i32(i32 %wf_token, i32 %idx1)
+  %readlane1.1 = call i32 @llvm.amdgcn.readlane(i32 %val, i32 %readlane1)
+  %readlane1.2 = call i32 @llvm.amdgcn.waterfall.end.i32(i32 %wf_token, i32 %readlane1.1)
+  ; This store instruction should be outside the waterfall loop and the value
+  ; being stored generated incrementally in the loop itself
+  store i32 %readlane1.2, i32 addrspace(1)* %out1, align 4
+
+  %wf_token2 = call i32 @llvm.amdgcn.waterfall.begin(i32 %idx2)
+  %readlane2 = call i32 @llvm.amdgcn.waterfall.readfirstlane.i32.i32(i32 %wf_token2, i32 %idx2)
+  %readlane2.1 = call i32 @llvm.amdgcn.readlane(i32 %val, i32 %readlane2)
+  %readlane2.2 = call i32 @llvm.amdgcn.waterfall.end.i32(i32 %wf_token2, i32 %readlane2.1)
+  store i32 %readlane2.2, i32 addrspace(1)* %out2, align 4
+
+  ret void
+}
+
 declare i32 @llvm.amdgcn.waterfall.begin(i32) #0
 declare i32 @llvm.amdgcn.waterfall.readfirstlane.i32.i32(i32, i32) #0
 declare <8 x i32> @llvm.amdgcn.waterfall.readfirstlane.v8i32.v8i32(i32, <8 x i32>) #0

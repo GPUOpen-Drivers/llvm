@@ -237,6 +237,7 @@ FunctionPass *llvm::createSIInsertWaterfallPass() {
 bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
   bool Changed = false;
   MachineFunction &MF = *MBB.getParent();
+  MachineBasicBlock * CurrMBB = &MBB;
 
   // Firstly we check that there are at least 3 related waterfall instructions
   // for this begin
@@ -249,7 +250,7 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
     for ( auto RUse = MRI->use_begin(Item.TokReg), RSE = MRI->use_end();
           RUse != RSE; ++RUse) {
       MachineInstr *RUseMI = RUse->getParent();
-      assert((MBB.getNumber() == RUseMI->getParent()->getNumber()) &&
+      assert((CurrMBB->getNumber() == RUseMI->getParent()->getNumber()) &&
              "Linked WATERFALL pseudo ops found in different BBs");
     }
 
@@ -279,9 +280,7 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
       unsigned PhiReg = MRI->createVirtualRegister(EndDstRC);
       unsigned EndSrc = TII->getNamedOperand(*EndMI,
                                              AMDGPU::OpName::src)->getReg();
-      initReg(MBB, MRI, RI, TII, I, DL, EndInit, 0x0);
-      //BuildMI(MBB, I, DL, TII->get(AMDGPU::V_MOV_B32_e32), EndInit)
-      //  .addImm(0x0);
+      initReg(*CurrMBB, MRI, RI, TII, I, DL, EndInit, 0x0);
       Item.EndRegs.push_back(std::make_tuple(EndInit, EndDst, PhiReg, EndSrc));
     }
 
@@ -291,15 +290,15 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
     unsigned TmpExec =
       MRI->createVirtualRegister(&AMDGPU::SReg_64_XEXECRegClass);
 
-    BuildMI(MBB, I, DL, TII->get(TargetOpcode::IMPLICIT_DEF), TmpExec);
+    BuildMI(*CurrMBB, I, DL, TII->get(TargetOpcode::IMPLICIT_DEF), TmpExec);
 
     // Save the EXEC mask
-    BuildMI(MBB, I, DL, TII->get(AMDGPU::S_MOV_B64), SaveExec)
+    BuildMI(*CurrMBB, I, DL, TII->get(AMDGPU::S_MOV_B64), SaveExec)
       .addReg(AMDGPU::EXEC);
 
     MachineBasicBlock &LoopBB = *MF.CreateMachineBasicBlock();
     MachineBasicBlock &RemainderBB = *MF.CreateMachineBasicBlock();
-    MachineFunction::iterator MBBI(MBB);
+    MachineFunction::iterator MBBI(*CurrMBB);
     ++MBBI;
 
     MF.insert(MBBI, &LoopBB);
@@ -312,7 +311,7 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
     // SI_WATERFALL_END into the new LoopBB
     MachineBasicBlock::iterator SpliceE(Item.Final);
     ++SpliceE;
-    LoopBB.splice(LoopBB.begin(), &MBB, I, SpliceE);
+    LoopBB.splice(LoopBB.begin(), CurrMBB, I, SpliceE);
 
     // Iterate over the instructions inserted into the loop
     // Need to unset any kill flag on any uses as now this is a loop that is no
@@ -321,12 +320,12 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
       MI.clearKillInfo();
     }
 
-    RemainderBB.transferSuccessorsAndUpdatePHIs(&MBB);
-    RemainderBB.splice(RemainderBB.begin(), &MBB, SpliceE, MBB.end());
+    RemainderBB.transferSuccessorsAndUpdatePHIs(CurrMBB);
+    RemainderBB.splice(RemainderBB.begin(), CurrMBB, SpliceE, CurrMBB->end());
     MachineBasicBlock::iterator E(Item.Final);
     ++E;
 
-    MBB.addSuccessor(&LoopBB);
+    CurrMBB->addSuccessor(&LoopBB);
 
     MachineBasicBlock::iterator J = LoopBB.begin();
 
@@ -338,13 +337,13 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
     for (auto EndReg : Item.EndRegs) {
       BuildMI(LoopBB, J, DL, TII->get(TargetOpcode::PHI), std::get<2>(EndReg))
         .addReg(std::get<0>(EndReg))
-        .addMBB(&MBB)
+        .addMBB(CurrMBB)
         .addReg(std::get<1>(EndReg))
         .addMBB(&LoopBB);
     }
     BuildMI(LoopBB, J, DL, TII->get(TargetOpcode::PHI), PhiExec)
       .addReg(TmpExec)
-      .addMBB(&MBB)
+      .addMBB(CurrMBB)
       .addReg(NewExec)
       .addMBB(&LoopBB);
 
@@ -415,6 +414,9 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
       RFLMI->eraseFromParent();
     for (auto ENDMI : Item.EndList)
       ENDMI->eraseFromParent();
+
+    // To process subsequent waterfall groups, update CurrMBB to the RemainderBB
+    CurrMBB = &RemainderBB;
 
     Changed = true;
   }
