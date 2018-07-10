@@ -213,6 +213,10 @@ namespace {
       initializeSIInsertWaterfallPass(*PassRegistry::getPassRegistry());
     }
 
+    void getAnalysisUsage(AnalysisUsage &AU) const override {
+      MachineFunctionPass::getAnalysisUsage(AU);
+    }
+
     bool processWaterfall(MachineBasicBlock &MBB);
 
     bool runOnMachineFunction(MachineFunction &MF) override;
@@ -309,6 +313,13 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
     MachineBasicBlock::iterator SpliceE(Item.Final);
     ++SpliceE;
     LoopBB.splice(LoopBB.begin(), &MBB, I, SpliceE);
+
+    // Iterate over the instructions inserted into the loop
+    // Need to unset any kill flag on any uses as now this is a loop that is no
+    // longer valid
+    for (MachineInstr &MI : LoopBB) {
+      MI.clearKillInfo();
+    }
 
     RemainderBB.transferSuccessorsAndUpdatePHIs(&MBB);
     RemainderBB.splice(RemainderBB.begin(), &MBB, SpliceE, MBB.end());

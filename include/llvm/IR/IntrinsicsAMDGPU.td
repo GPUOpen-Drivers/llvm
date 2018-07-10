@@ -1406,9 +1406,9 @@ def int_amdgcn_set_inactive :
 // Set of intrinsics to allow for non-uniform control by dictating access via
 // waterfall style code
 def int_amdgcn_waterfall_begin :
-    Intrinsic<[llvm_anyint_ty],  // Returns sgpr token
-            [llvm_i32_ty],       // VGPR index for waterfall
-            [IntrNoMem, IntrConvergent]>;
+    Intrinsic<[llvm_i32_ty],  // Returns sgpr token
+              [llvm_i32_ty],  // VGPR index for waterfall
+              [IntrNoMem, IntrConvergent]>;
 
 // Often the index from begin will be used as the readfirstlane value from
 // waterfall code - however, this isn't always the case. The readfirstlane style
@@ -1426,9 +1426,9 @@ def int_amdgcn_waterfall_readfirstlane :
 // intrinsic is reached
 // To enable waterfall, all three intrinsics
 def int_amdgcn_waterfall_end :
-    Intrinsic<[llvm_any_ty],     // Returns VGPR value
-              [llvm_i32_ty,      // Token from begin
-               llvm_any_ty],     // VGPR Value
+    Intrinsic<[llvm_any_ty],      // Returns VGPR value
+              [llvm_i32_ty,       // Token from begin
+               LLVMMatchType<0>], // VGPR Value
               [IntrNoMem, IntrConvergent]>;
 
 //===----------------------------------------------------------------------===//
