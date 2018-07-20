@@ -26,6 +26,7 @@
 namespace llvm {
 
 class Argument;
+class AMDGPUSubtarget;
 class FeatureBitset;
 class Function;
 class GlobalValue;
@@ -35,6 +36,7 @@ class MCRegisterInfo;
 class MCSection;
 class MCSubtargetInfo;
 class MachineMemOperand;
+class SISubtarget;
 class Triple;
 
 namespace AMDGPU {
@@ -440,6 +442,12 @@ int64_t getSMRDEncodedOffset(const MCSubtargetInfo &ST, int64_t ByteOffset);
 /// offset field.  \p ByteOffset should be the offset in bytes and
 /// not the encoded offset.
 bool isLegalSMRDImmOffset(const MCSubtargetInfo &ST, int64_t ByteOffset);
+
+// Given Imm, split it into the values to put into the SOffset and ImmOffset
+// fields in an MUBUF instruction. Return false if it is not possible (due to a
+// hardware bug needing a workaround).
+bool splitMUBUFOffset(uint32_t Imm, uint32_t &SOffset, uint32_t &ImmOffset,
+                      const SISubtarget *Subtarget);
 
 /// \returns true if the intrinsic is divergent
 bool isIntrinsicSourceOfDivergence(unsigned IntrID);
