@@ -923,10 +923,25 @@ InstCombiner::simplifyShrShlDemandedBits(Instruction *Shr, const APInt &ShrOp1,
 /// Implement SimplifyDemandedVectorElts for amdgcn buffer and image intrinsics.
 Value *InstCombiner::simplifyAMDGCNMemoryIntrinsicDemanded(IntrinsicInst *II,
                                                            APInt DemandedElts,
-                                                           int DMaskIdx) {
+                                                           int DMaskIdx,
+                                                           int TFEIdx) {
   unsigned VWidth = II->getType()->getVectorNumElements();
   if (VWidth == 1)
     return nullptr;
+
+  ConstantInt *TFEEnable = nullptr;
+  ConstantInt *LWEEnable = nullptr;
+  bool TFELWEEnabled = false;
+  if (TFEIdx > 0) {
+    TFEEnable = dyn_cast<ConstantInt>(II->getArgOperand(TFEIdx));
+    LWEEnable = dyn_cast<ConstantInt>(II->getArgOperand(TFEIdx + 1));
+    if (TFEEnable && LWEEnable) {
+      TFELWEEnabled = TFEEnable->getZExtValue() | LWEEnable->getZExtValue();
+    }
+  }
+
+  if (TFELWEEnabled)
+    return nullptr; // TFE not yet supported
 
   ConstantInt *NewDMask = nullptr;
 
@@ -1648,60 +1663,61 @@ Value *InstCombiner::SimplifyDemandedVectorElts(Value *V, APInt DemandedElts,
       break;
     case Intrinsic::amdgcn_buffer_load:
     case Intrinsic::amdgcn_buffer_load_format:
-    // case Intrinsic::amdgcn_image_sample:
-    // case Intrinsic::amdgcn_image_sample_cl:
-    // case Intrinsic::amdgcn_image_sample_d:
-    // case Intrinsic::amdgcn_image_sample_d_cl:
-    // case Intrinsic::amdgcn_image_sample_l:
-    // case Intrinsic::amdgcn_image_sample_b:
-    // case Intrinsic::amdgcn_image_sample_b_cl:
-    // case Intrinsic::amdgcn_image_sample_lz:
-    // case Intrinsic::amdgcn_image_sample_cd:
-    // case Intrinsic::amdgcn_image_sample_cd_cl:
+    case Intrinsic::amdgcn_image_sample:
+    case Intrinsic::amdgcn_image_sample_cl:
+    case Intrinsic::amdgcn_image_sample_d:
+    case Intrinsic::amdgcn_image_sample_d_cl:
+    case Intrinsic::amdgcn_image_sample_l:
+    case Intrinsic::amdgcn_image_sample_b:
+    case Intrinsic::amdgcn_image_sample_b_cl:
+    case Intrinsic::amdgcn_image_sample_lz:
+    case Intrinsic::amdgcn_image_sample_cd:
+    case Intrinsic::amdgcn_image_sample_cd_cl:
 
-    // case Intrinsic::amdgcn_image_sample_c:
-    // case Intrinsic::amdgcn_image_sample_c_cl:
-    // case Intrinsic::amdgcn_image_sample_c_d:
-    // case Intrinsic::amdgcn_image_sample_c_d_cl:
-    // case Intrinsic::amdgcn_image_sample_c_l:
-    // case Intrinsic::amdgcn_image_sample_c_b:
-    // case Intrinsic::amdgcn_image_sample_c_b_cl:
-    // case Intrinsic::amdgcn_image_sample_c_lz:
-    // case Intrinsic::amdgcn_image_sample_c_cd:
-    // case Intrinsic::amdgcn_image_sample_c_cd_cl:
+    case Intrinsic::amdgcn_image_sample_c:
+    case Intrinsic::amdgcn_image_sample_c_cl:
+    case Intrinsic::amdgcn_image_sample_c_d:
+    case Intrinsic::amdgcn_image_sample_c_d_cl:
+    case Intrinsic::amdgcn_image_sample_c_l:
+    case Intrinsic::amdgcn_image_sample_c_b:
+    case Intrinsic::amdgcn_image_sample_c_b_cl:
+    case Intrinsic::amdgcn_image_sample_c_lz:
+    case Intrinsic::amdgcn_image_sample_c_cd:
+    case Intrinsic::amdgcn_image_sample_c_cd_cl:
 
-    // case Intrinsic::amdgcn_image_sample_o:
-    // case Intrinsic::amdgcn_image_sample_cl_o:
-    // case Intrinsic::amdgcn_image_sample_d_o:
-    // case Intrinsic::amdgcn_image_sample_d_cl_o:
-    // case Intrinsic::amdgcn_image_sample_l_o:
-    // case Intrinsic::amdgcn_image_sample_b_o:
-    // case Intrinsic::amdgcn_image_sample_b_cl_o:
-    // case Intrinsic::amdgcn_image_sample_lz_o:
-    // case Intrinsic::amdgcn_image_sample_cd_o:
-    // case Intrinsic::amdgcn_image_sample_cd_cl_o:
+    case Intrinsic::amdgcn_image_sample_o:
+    case Intrinsic::amdgcn_image_sample_cl_o:
+    case Intrinsic::amdgcn_image_sample_d_o:
+    case Intrinsic::amdgcn_image_sample_d_cl_o:
+    case Intrinsic::amdgcn_image_sample_l_o:
+    case Intrinsic::amdgcn_image_sample_b_o:
+    case Intrinsic::amdgcn_image_sample_b_cl_o:
+    case Intrinsic::amdgcn_image_sample_lz_o:
+    case Intrinsic::amdgcn_image_sample_cd_o:
+    case Intrinsic::amdgcn_image_sample_cd_cl_o:
 
-    // case Intrinsic::amdgcn_image_sample_c_o:
-    // case Intrinsic::amdgcn_image_sample_c_cl_o:
-    // case Intrinsic::amdgcn_image_sample_c_d_o:
-    // case Intrinsic::amdgcn_image_sample_c_d_cl_o:
-    // case Intrinsic::amdgcn_image_sample_c_l_o:
-    // case Intrinsic::amdgcn_image_sample_c_b_o:
-    // case Intrinsic::amdgcn_image_sample_c_b_cl_o:
-    // case Intrinsic::amdgcn_image_sample_c_lz_o:
-    // case Intrinsic::amdgcn_image_sample_c_cd_o:
-    // case Intrinsic::amdgcn_image_sample_c_cd_cl_o:
+    case Intrinsic::amdgcn_image_sample_c_o:
+    case Intrinsic::amdgcn_image_sample_c_cl_o:
+    case Intrinsic::amdgcn_image_sample_c_d_o:
+    case Intrinsic::amdgcn_image_sample_c_d_cl_o:
+    case Intrinsic::amdgcn_image_sample_c_l_o:
+    case Intrinsic::amdgcn_image_sample_c_b_o:
+    case Intrinsic::amdgcn_image_sample_c_b_cl_o:
+    case Intrinsic::amdgcn_image_sample_c_lz_o:
+    case Intrinsic::amdgcn_image_sample_c_cd_o:
+    case Intrinsic::amdgcn_image_sample_c_cd_cl_o:
 
     case Intrinsic::amdgcn_image_getlod: {
       auto IID = II->getIntrinsicID();
       bool IsBuffer = IID == Intrinsic::amdgcn_buffer_load ||
                       IID == Intrinsic::amdgcn_buffer_load_format;
       return simplifyAMDGCNMemoryIntrinsicDemanded(II, DemandedElts,
-                                                   IsBuffer ? -1 : 3);
+                                                   IsBuffer ? -1 : 3, -1);
     }
     default: {
-      // if (getAMDGPUImageDMaskIntrinsic(II->getIntrinsicID()))
-      //   return simplifyAMDGCNMemoryIntrinsicDemanded(II, DemandedElts, 0);
+      if (getAMDGPUImageDMaskIntrinsic(II->getIntrinsicID()))
+        return simplifyAMDGCNMemoryIntrinsicDemanded(
+            II, DemandedElts, 0, II->getNumArgOperands() - 3);
 
       break;
     }
