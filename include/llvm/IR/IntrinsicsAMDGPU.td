@@ -1407,18 +1407,18 @@ def int_amdgcn_set_inactive :
 // waterfall style code
 def int_amdgcn_waterfall_begin :
     Intrinsic<[llvm_i32_ty],  // Returns sgpr token
-              [llvm_i32_ty],  // VGPR index for waterfall
-              [IntrNoMem, IntrConvergent]>;
+              [llvm_any_ty],  // VGPR index for waterfall
+              [IntrConvergent]>;
 
 // Often the index from begin will be used as the readfirstlane value from
 // waterfall code - however, this isn't always the case. The readfirstlane style
 // intrinsic is required to be used, but often is a no-op if the index is the
 // thing that is used
 def int_amdgcn_waterfall_readfirstlane :
-    Intrinsic<[llvm_any_ty],     // Returns any value
+    Intrinsic<[llvm_anyint_ty],  // Returns any sgpr value
               [llvm_i32_ty,      // Token from begin
                llvm_any_ty],     // VGPR value to be used in readfirstlane
-              [IntrNoMem, IntrConvergent]>;
+              [IntrConvergent]>;
 
 // Effectively a no-op, but this intrinsic is used to indicate the end of the
 // region for waterfall by tagging a value as the end of the section
@@ -1426,10 +1426,21 @@ def int_amdgcn_waterfall_readfirstlane :
 // intrinsic is reached
 // To enable waterfall, all three intrinsics
 def int_amdgcn_waterfall_end :
-    Intrinsic<[llvm_any_ty],      // Returns VGPR value
+    Intrinsic<[llvm_any_ty],      // Returns any value
               [llvm_i32_ty,       // Token from begin
-               LLVMMatchType<0>], // VGPR Value
-              [IntrNoMem, IntrConvergent]>;
+               LLVMMatchType<0>], // Same as return value
+              [IntrConvergent]>;
+
+// Effectively a no-op, no code results directly from this intrinsic. This is
+// used to indicate that the use of the defined value constitutes the end of the
+// waterfall propagation. This is roughly equivalent to the end intrinsic, but
+// can be used to tag values that are used in non-defining operations such as a
+// store
+def int_amdgcn_waterfall_last_use :
+    Intrinsic<[llvm_anyint_ty],   // Returns any sgpr value
+              [llvm_i32_ty,       // Token from begin
+               LLVMMatchType<0>], // Same as return value
+              [IntrConvergent]>;
 
 //===----------------------------------------------------------------------===//
 // CI+ Intrinsics
