@@ -203,14 +203,14 @@ defm V_RSQ_F32 : VOP1Inst <"v_rsq_f32", VOP_F32_F32, AMDGPUrsq>;
 defm V_SQRT_F32 : VOP1Inst <"v_sqrt_f32", VOP_F32_F32, fsqrt>;
 } // End SchedRW = [WriteQuarterRate32]
 
-let SchedRW = [WriteDouble] in {
+let SchedRW = [WriteDouble], FPDPRounding = 1 in {
 defm V_RCP_F64 : VOP1Inst <"v_rcp_f64", VOP_F64_F64, AMDGPUrcp>;
 defm V_RSQ_F64 : VOP1Inst <"v_rsq_f64", VOP_F64_F64, AMDGPUrsq>;
 } // End SchedRW = [WriteDouble];
 
-let SchedRW = [WriteDouble] in {
+let SchedRW = [WriteDouble], FPDPRounding = 1 in {
 defm V_SQRT_F64 : VOP1Inst <"v_sqrt_f64", VOP_F64_F64, fsqrt>;
-} // End SchedRW = [WriteDouble]
+} // End SchedRW = [WriteDouble], FPDPRounding = 1
 
 let SchedRW = [WriteQuarterRate32] in {
 defm V_SIN_F32 : VOP1Inst <"v_sin_f32", VOP_F32_F32, AMDGPUsin>;
