@@ -60,6 +60,7 @@ FunctionPass *createAMDGPUUseNativeCallsPass();
 FunctionPass *createAMDGPUCodeGenPreparePass();
 FunctionPass *createAMDGPUMachineCFGStructurizerPass();
 FunctionPass *createAMDGPURewriteOutArgumentsPass();
+FunctionPass *createSIModeRegisterPass();
 
 void initializeAMDGPUDAGToDAGISelPass(PassRegistry&);
 
@@ -191,6 +192,9 @@ extern char &SIMemoryLegalizerID;
 
 void initializeSIDebuggerInsertNopsPass(PassRegistry&);
 extern char &SIDebuggerInsertNopsID;
+
+void initializeSIModeRegisterPass(PassRegistry&);
+extern char &SIModeRegisterID;
 
 void initializeSIInsertWaitcntsPass(PassRegistry&);
 extern char &SIInsertWaitcntsID;
