@@ -1034,7 +1034,6 @@ class AMDGPUBufferStore : Intrinsic <
 def int_amdgcn_buffer_store_format : AMDGPUBufferStore;
 def int_amdgcn_buffer_store : AMDGPUBufferStore;
 
-// Obsolescent tbuffer intrinsics.
 def int_amdgcn_tbuffer_load : Intrinsic <
     [llvm_any_ty],    // overloaded for types f32/i32, v2f32/v2i32, v4f32/v4i32
     [llvm_v4i32_ty,   // rsrc(SGPR)
@@ -1061,32 +1060,6 @@ def int_amdgcn_tbuffer_store : Intrinsic <
      llvm_i32_ty,    // nfmt(imm)
      llvm_i1_ty,     // glc(imm)
      llvm_i1_ty],    // slc(imm)
-    [IntrWriteMem], "", [SDNPMemOperand]>,
-  AMDGPURsrcIntrinsic<1>;
-
-// New tbuffer intrinsics, with combined format and combined cachepolicy.
-def int_amdgcn_tbuffer2_load : Intrinsic <
-    [llvm_any_ty],    // overloaded for types f32/i32, v2f32/v2i32, v4f32/v4i32
-    [llvm_v4i32_ty,   // rsrc(SGPR)
-     llvm_i32_ty,     // vindex(VGPR)
-     llvm_i32_ty,     // voffset(VGPR)
-     llvm_i32_ty,     // soffset(SGPR)
-     llvm_i32_ty,     // offset(imm)
-     llvm_i32_ty,     // format(imm; bits 3..0 = dfmt, bits 6..4 = nfmt)
-     llvm_i32_ty],    // cachepolicy(imm; bit 0 = glc, bit 1 = slc) 
-    [IntrReadMem], "", [SDNPMemOperand]>,
-  AMDGPURsrcIntrinsic<0>;
-
-def int_amdgcn_tbuffer2_store : Intrinsic <
-    [],
-    [llvm_any_ty,    // vdata(VGPR), overloaded for types f32/i32, v2f32/v2i32, v4f32/v4i32
-     llvm_v4i32_ty,  // rsrc(SGPR)
-     llvm_i32_ty,    // vindex(VGPR)
-     llvm_i32_ty,    // voffset(VGPR)
-     llvm_i32_ty,    // soffset(SGPR)
-     llvm_i32_ty,    // offset(imm)
-     llvm_i32_ty,    // format(imm; bits 3..0 = dfmt, bits 6..4 = nfmt)
-     llvm_i32_ty],   // cachepolicy(imm; bit 0 = glc, bit 1 = slc) 
     [IntrWriteMem], "", [SDNPMemOperand]>,
   AMDGPURsrcIntrinsic<1>;
 

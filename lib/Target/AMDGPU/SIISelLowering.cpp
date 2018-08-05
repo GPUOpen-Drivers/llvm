@@ -3771,19 +3771,6 @@ SDValue SITargetLowering::adjustLoadValueType(unsigned Opcode,
   for (unsigned I = 2, E = M->getNumOperands(); I != E; ++I)
     Ops.push_back(M->getOperand(I));
 
-  if (cast<ConstantSDNode>(M->getOperand(1))->getZExtValue()
-      == Intrinsic::amdgcn_tbuffer_load) {
-    // The obsolescent tbuffer.load intrinsic is treated specially: its separate
-    // dfmt,nfmt,glc,slc are combined into format,cachepolicy.
-    unsigned Dfmt = cast<ConstantSDNode>(Ops[Ops.size() - 4])->getZExtValue();
-    unsigned Nfmt = cast<ConstantSDNode>(Ops[Ops.size() - 3])->getZExtValue();
-    unsigned Glc = cast<ConstantSDNode>(Ops[Ops.size() - 2])->getZExtValue();
-    unsigned Slc = cast<ConstantSDNode>(Ops[Ops.size() - 1])->getZExtValue();
-    Ops.resize(Ops.size() - 4);
-    Ops.push_back(DAG.getConstant(Dfmt | (Nfmt << 4), DL, MVT::i32)); // format
-    Ops.push_back(DAG.getConstant(Glc | (Slc << 1), DL, MVT::i32)); // cachepolicy
-  }
-
   bool Unpacked = Subtarget->hasUnpackedD16VMem();
   EVT LoadVT = M->getValueType(0);
 
@@ -5390,10 +5377,6 @@ SDValue SITargetLowering::LowerINTRINSIC_W_CHAIN(SDValue Op,
       return adjustLoadValueType(AMDGPUISD::TBUFFER_LOAD_FORMAT_D16, M, DAG);
     }
 
-    unsigned Dfmt = cast<ConstantSDNode>(Op.getOperand(7))->getZExtValue();
-    unsigned Nfmt = cast<ConstantSDNode>(Op.getOperand(8))->getZExtValue();
-    unsigned Glc = cast<ConstantSDNode>(Op.getOperand(9))->getZExtValue();
-    unsigned Slc = cast<ConstantSDNode>(Op.getOperand(10))->getZExtValue();
     SDValue Ops[] = {
       Op.getOperand(0),  // Chain
       Op.getOperand(2),  // rsrc
@@ -5401,31 +5384,10 @@ SDValue SITargetLowering::LowerINTRINSIC_W_CHAIN(SDValue Op,
       Op.getOperand(4),  // voffset
       Op.getOperand(5),  // soffset
       Op.getOperand(6),  // offset
-      DAG.getConstant(Dfmt | (Nfmt << 4), DL, MVT::i32), // format
-      DAG.getConstant(Glc | (Slc << 1), DL, MVT::i32), // cachepolicy
-    };
-
-    return DAG.getMemIntrinsicNode(AMDGPUISD::TBUFFER_LOAD_FORMAT, DL,
-                                   Op->getVTList(), Ops, LoadVT,
-                                   M->getMemOperand());
-  }
-  case Intrinsic::amdgcn_tbuffer2_load: {
-    MemSDNode *M = cast<MemSDNode>(Op);
-    EVT LoadVT = Op.getValueType();
-    bool IsD16 = LoadVT.getScalarType() == MVT::f16;
-    if (IsD16) {
-      return adjustLoadValueType(AMDGPUISD::TBUFFER_LOAD_FORMAT_D16, M, DAG);
-    }
-
-    SDValue Ops[] = {
-      Op.getOperand(0),  // Chain
-      Op.getOperand(2),  // rsrc
-      Op.getOperand(3),  // vindex
-      Op.getOperand(4),  // voffset
-      Op.getOperand(5),  // soffset
-      Op.getOperand(6),  // offset
-      Op.getOperand(7),  // format
-      Op.getOperand(8),  // cachepolicy
+      Op.getOperand(7),  // dfmt
+      Op.getOperand(8),  // nfmt
+      Op.getOperand(9),  // glc
+      Op.getOperand(10)   // slc
     };
 
     return DAG.getMemIntrinsicNode(AMDGPUISD::TBUFFER_LOAD_FORMAT, DL,
@@ -5768,10 +5730,6 @@ SDValue SITargetLowering::LowerINTRINSIC_VOID(SDValue Op,
     auto Opcode = NumChannels->getZExtValue() == 3 ?
       AMDGPUISD::TBUFFER_STORE_FORMAT_X3 : AMDGPUISD::TBUFFER_STORE_FORMAT;
 
-    unsigned Dfmt = cast<ConstantSDNode>(Op.getOperand(8))->getZExtValue();
-    unsigned Nfmt = cast<ConstantSDNode>(Op.getOperand(9))->getZExtValue();
-    unsigned Glc = cast<ConstantSDNode>(Op.getOperand(12))->getZExtValue();
-    unsigned Slc = cast<ConstantSDNode>(Op.getOperand(13))->getZExtValue();
     SDValue Ops[] = {
      Chain,
      Op.getOperand(3),  // vdata
@@ -5780,8 +5738,10 @@ SDValue SITargetLowering::LowerINTRINSIC_VOID(SDValue Op,
      VOffset,
      Op.getOperand(6),  // soffset
      Op.getOperand(7),  // inst_offset
-     DAG.getConstant(Dfmt | (Nfmt << 4), DL, MVT::i32), // format
-     DAG.getConstant(Glc | (Slc << 1), DL, MVT::i32), // cachepolicy
+     Op.getOperand(8),  // dfmt
+     Op.getOperand(9),  // nfmt
+     Op.getOperand(12), // glc
+     Op.getOperand(13), // slc
     };
 
     assert((cast<ConstantSDNode>(Op.getOperand(14)))->getZExtValue() == 0 &&
@@ -5801,10 +5761,6 @@ SDValue SITargetLowering::LowerINTRINSIC_VOID(SDValue Op,
     bool IsD16 = (VData.getValueType().getScalarType() == MVT::f16);
     if (IsD16)
       VData = handleD16VData(VData, DAG);
-    unsigned Dfmt = cast<ConstantSDNode>(Op.getOperand(8))->getZExtValue();
-    unsigned Nfmt = cast<ConstantSDNode>(Op.getOperand(9))->getZExtValue();
-    unsigned Glc = cast<ConstantSDNode>(Op.getOperand(10))->getZExtValue();
-    unsigned Slc = cast<ConstantSDNode>(Op.getOperand(11))->getZExtValue();
     SDValue Ops[] = {
       Chain,
       VData,             // vdata
@@ -5813,31 +5769,10 @@ SDValue SITargetLowering::LowerINTRINSIC_VOID(SDValue Op,
       Op.getOperand(5),  // voffset
       Op.getOperand(6),  // soffset
       Op.getOperand(7),  // offset
-      DAG.getConstant(Dfmt | (Nfmt << 4), DL, MVT::i32), // format
-      DAG.getConstant(Glc | (Slc << 1), DL, MVT::i32), // cachepolicy
-    };
-    unsigned Opc = IsD16 ? AMDGPUISD::TBUFFER_STORE_FORMAT_D16 :
-                           AMDGPUISD::TBUFFER_STORE_FORMAT;
-    MemSDNode *M = cast<MemSDNode>(Op);
-    return DAG.getMemIntrinsicNode(Opc, DL, Op->getVTList(), Ops,
-                                   M->getMemoryVT(), M->getMemOperand());
-  }
-
-  case Intrinsic::amdgcn_tbuffer2_store: {
-    SDValue VData = Op.getOperand(2);
-    bool IsD16 = (VData.getValueType().getScalarType() == MVT::f16);
-    if (IsD16)
-      VData = handleD16VData(VData, DAG);
-    SDValue Ops[] = {
-      Chain,
-      VData,             // vdata
-      Op.getOperand(3),  // rsrc
-      Op.getOperand(4),  // vindex
-      Op.getOperand(5),  // voffset
-      Op.getOperand(6),  // soffset
-      Op.getOperand(7),  // offset
-      Op.getOperand(8),  // format
-      Op.getOperand(9),  // cachepolicy
+      Op.getOperand(8),  // dfmt
+      Op.getOperand(9),  // nfmt
+      Op.getOperand(10), // glc
+      Op.getOperand(11)  // slc
     };
     unsigned Opc = IsD16 ? AMDGPUISD::TBUFFER_STORE_FORMAT_D16 :
                            AMDGPUISD::TBUFFER_STORE_FORMAT;
