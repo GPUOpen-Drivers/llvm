@@ -1042,7 +1042,7 @@ def int_amdgcn_buffer_store : AMDGPUBufferStore;
 // These new instrinsics also keep the offset and soffset arguments separate as
 // they behave differently in bounds checking and swizzling.
 class AMDGPURawBufferLoad : Intrinsic <
-  [llvm_anyfloat_ty],
+  [llvm_any_ty],
   [llvm_v4i32_ty,     // rsrc(SGPR)
    llvm_i32_ty,       // offset(VGPR/imm, included in bounds checking and swizzling)
    llvm_i32_ty,       // soffset(SGPR/imm, excluded from bounds checking and swizzling)
@@ -1053,7 +1053,7 @@ def int_amdgcn_raw_buffer_load_format : AMDGPURawBufferLoad;
 def int_amdgcn_raw_buffer_load : AMDGPURawBufferLoad;
 
 class AMDGPUStructBufferLoad : Intrinsic <
-  [llvm_anyfloat_ty],
+  [llvm_any_ty],
   [llvm_v4i32_ty,     // rsrc(SGPR)
    llvm_i32_ty,       // vindex(VGPR)
    llvm_i32_ty,       // offset(VGPR/imm, included in bounds checking and swizzling)
@@ -1066,7 +1066,7 @@ def int_amdgcn_struct_buffer_load : AMDGPUStructBufferLoad;
 
 class AMDGPURawBufferStore : Intrinsic <
   [],
-  [llvm_anyfloat_ty,  // vdata(VGPR) -- can currently only select f32, v2f32, v4f32
+  [llvm_any_ty,       // vdata(VGPR)
    llvm_v4i32_ty,     // rsrc(SGPR)
    llvm_i32_ty,       // offset(VGPR/imm, included in bounds checking and swizzling)
    llvm_i32_ty,       // soffset(SGPR/imm, excluded from bounds checking and swizzling)
@@ -1078,7 +1078,7 @@ def int_amdgcn_raw_buffer_store : AMDGPURawBufferStore;
 
 class AMDGPUStructBufferStore : Intrinsic <
   [],
-  [llvm_anyfloat_ty,  // vdata(VGPR) -- can currently only select f32, v2f32, v4f32
+  [llvm_any_ty,       // vdata(VGPR)
    llvm_v4i32_ty,     // rsrc(SGPR)
    llvm_i32_ty,       // vindex(VGPR)
    llvm_i32_ty,       // offset(VGPR/imm, included in bounds checking and swizzling)
