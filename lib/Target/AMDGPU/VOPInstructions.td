@@ -143,8 +143,6 @@ class VOP3_Real <VOP_Pseudo ps, int EncodingFamily> :
   let isPseudo = 0;
   let isCodeGenOnly = 0;
   let UseNamedOperandTable = 1;
-  // Leave a gap when decoding a vop3 mac for the missing src2 modifiers.
-  let hasDummyOperands = 1;
 
   let Constraints     = ps.Constraints;
   let DisableEncoding = ps.DisableEncoding;

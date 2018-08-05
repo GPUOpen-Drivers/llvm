@@ -243,6 +243,15 @@ DecodeStatus AMDGPUDisassembler::getInstruction(MCInst &MI, uint64_t &Size,
     Res = tryDecodeInst(DecoderTableGFX964, MI, QW, Address);
   } while (false);
 
+  if (Res && (MI.getOpcode() == AMDGPU::V_MAC_F32_e64_vi ||
+              MI.getOpcode() == AMDGPU::V_MAC_F32_e64_si ||
+              MI.getOpcode() == AMDGPU::V_MAC_F16_e64_vi ||
+              MI.getOpcode() == AMDGPU::V_FMAC_F32_e64_vi)) {
+    // Insert dummy unused src2_modifiers.
+    insertNamedMCOperand(MI, MCOperand::createImm(0),
+                         AMDGPU::OpName::src2_modifiers);
+  }
+
   if (Res && (MCII->get(MI.getOpcode()).TSFlags & SIInstrFlags::MIMG)) {
     Res = convertMIMGInst(MI);
   }
