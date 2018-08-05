@@ -2034,9 +2034,7 @@ static bool populateInstruction(CodeGenTarget &Target,
     if (Base != ~0U)
       OpInfo.addField(Base, Width, Offset);
 
-    // For an operand with no bits in the instruction encoding, push it only if
-    // hasDummyOperands is true.
-    if (OpInfo.numFields() > 0 || Def.getValueAsBit("hasDummyOperands"))
+    if (OpInfo.numFields() > 0)
       InsnOperands.push_back(OpInfo);
   }
 

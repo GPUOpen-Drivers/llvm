@@ -580,12 +580,6 @@ class Instruction {
   /// instruction selection predicates. FastISel cannot handle such cases, but
   /// SelectionDAG can.
   bit FastISelShouldIgnore = 0;
-
-  /// Normally a "dummy" operand (an operand named in InOperandList or
-  /// OutOperandList but not appearing in the instruction encoding) does not
-  /// appear in the MCInst. Setting this to 1 means that the disassembler
-  /// pushes an immediate 0 operand onto the MCInst for such a dummy operand.
-  bit hasDummyOperands = 0;
 }
 
 /// PseudoInstExpansion - Expansion information for a pseudo-instruction.
