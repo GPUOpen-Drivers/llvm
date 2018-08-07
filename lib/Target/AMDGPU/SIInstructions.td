@@ -1451,12 +1451,10 @@ def : GCNPat <
   (COPY $src)
 >;
 }
-let OtherPredicates = [isGFX9] in {
 def : GCNPat <
   (i32 (AMDGPUfp16_zext f16:$src)),
   (V_AND_B32_e64 $src, (V_MOV_B32_e32 (i32 0x0000ffff)))
 >;
-}
 
 def : GCNPat <
   (i32 (trunc i64:$a)),
