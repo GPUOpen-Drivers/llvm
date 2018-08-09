@@ -133,8 +133,6 @@ bool SIAddIMGInit::runOnMachineFunction(MachineFunction &MF) {
           // Create a register for the intialization value.
           unsigned prevDst =
             MRI.createVirtualRegister(TII->getOpRegClass(MI, dstIdx));
-          BuildMI(MBB, MI, DL, TII->get(AMDGPU::IMPLICIT_DEF), prevDst);
-
           unsigned newDst = 0; // Final initialized value will be in here
 
           // If PRTStrictNull feature is enabled (the default) then initialize
@@ -143,20 +141,29 @@ bool SIAddIMGInit::runOnMachineFunction(MachineFunction &MF) {
           unsigned sizeLeft = ST.usePRTStrictNull() ? initIdx : 1;
           unsigned currIdx = ST.usePRTStrictNull() ? 1 : initIdx;
 
-          for ( ; sizeLeft ; sizeLeft--, currIdx++ ) {
-            newDst = MRI.createVirtualRegister(TII->getOpRegClass(MI, dstIdx));
-            // Initialize dword
-            unsigned subReg =
-                MRI.createVirtualRegister(&AMDGPU::VGPR_32RegClass);
-            BuildMI(MBB, MI, DL, TII->get(AMDGPU::V_MOV_B32_e32), subReg)
-              .addImm(0);
-            // Insert into the super-reg
-            BuildMI(MBB, I, DL, TII->get(TargetOpcode::INSERT_SUBREG), newDst)
-              .addReg(prevDst)
-              .addReg(subReg)
-              .addImm(currIdx);
+          if (dstSize == 1) {
+            // In this case we can just initialize the result directly
+            BuildMI(MBB, MI, DL, TII->get(AMDGPU::V_MOV_B32_e32), prevDst)
+                .addImm(0);
+            newDst = prevDst;
+          } else {
+            BuildMI(MBB, MI, DL, TII->get(AMDGPU::IMPLICIT_DEF), prevDst);
+            for (; sizeLeft; sizeLeft--, currIdx++) {
+              newDst =
+                  MRI.createVirtualRegister(TII->getOpRegClass(MI, dstIdx));
+              // Initialize dword
+              unsigned subReg =
+                  MRI.createVirtualRegister(&AMDGPU::VGPR_32RegClass);
+              BuildMI(MBB, MI, DL, TII->get(AMDGPU::V_MOV_B32_e32), subReg)
+                  .addImm(0);
+              // Insert into the super-reg
+              BuildMI(MBB, I, DL, TII->get(TargetOpcode::INSERT_SUBREG), newDst)
+                  .addReg(prevDst)
+                  .addReg(subReg)
+                  .addImm(currIdx);
 
-            prevDst = newDst;
+              prevDst = newDst;
+            }
           }
 
           // Add as an implicit operand
