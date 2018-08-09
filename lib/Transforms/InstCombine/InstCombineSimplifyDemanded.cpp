@@ -1717,7 +1717,7 @@ Value *InstCombiner::SimplifyDemandedVectorElts(Value *V, APInt DemandedElts,
     default: {
       if (getAMDGPUImageDMaskIntrinsic(II->getIntrinsicID()))
         return simplifyAMDGCNMemoryIntrinsicDemanded(
-            II, DemandedElts, 0, II->getNumArgOperands() - 3);
+            II, DemandedElts, 0, II->getNumArgOperands() - 2);
 
       break;
     }
