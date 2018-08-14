@@ -5035,18 +5035,6 @@ SDValue SITargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
   case Intrinsic::amdgcn_interp_p1_f16: {
     SDValue M0 = copyToM0(DAG, DAG.getEntryNode(), DL, Op.getOperand(5));
     SDValue Glue = M0.getValue(1);
-    const unsigned DPRoundReg = AMDGPU::Hwreg::ID_MODE |
-                                (2 << AMDGPU::Hwreg::OFFSET_SHIFT_) |
-                                (1 << AMDGPU::Hwreg::WIDTH_M1_SHIFT_);
-    const SDValue BitField = DAG.getTargetConstant(DPRoundReg, DL, MVT::i16);
-    SDVTList BindParamVTs = DAG.getVTList(MVT::Other, MVT::Glue);
-    const SDValue FPRoundToZero = DAG.getConstant(FP_ROUND_ROUND_TO_ZERO, DL,
-                                                  MVT::i32);
-    SDValue RoundToZero = DAG.getNode(AMDGPUISD::SETREG, DL, BindParamVTs,
-                                      DAG.getEntryNode(), FPRoundToZero,
-                                      BitField, Glue);
-    Glue = RoundToZero.getValue(1);
-    SDValue InterpP1;
     if (getSubtarget()->getLDSBankCount() == 16) {
       // 16 bank LDS
       SDValue S = DAG.getNode(AMDGPUISD::INTERP_MOV, DL, MVT::f32,
@@ -5065,7 +5053,7 @@ SDValue SITargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
         DAG.getConstant(0, DL, MVT::i1), // $clamp
         DAG.getConstant(0, DL, MVT::i32) // $omod
       };
-      InterpP1 = DAG.getNode(AMDGPUISD::INTERP_P1LV_F16, DL, MVT::f32, Ops);
+      return DAG.getNode(AMDGPUISD::INTERP_P1LV_F16, DL, MVT::f32, Ops);
     } else {
       // 32 bank LDS
       SDValue Ops[] = {
@@ -5078,32 +5066,12 @@ SDValue SITargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
         DAG.getConstant(0, DL, MVT::i32), // $omod
         Glue
       };
-      InterpP1 = DAG.getNode(AMDGPUISD::INTERP_P1LL_F16, DL, MVT::f32, Ops);
+      return DAG.getNode(AMDGPUISD::INTERP_P1LL_F16, DL, MVT::f32, Ops);
     }
-    const SDValue FPRoundToNearest = DAG.getConstant(FP_ROUND_ROUND_TO_NEAREST,
-                                                     DL, MVT::i32);
-    SDValue RoundToNearest = DAG.getNode(AMDGPUISD::SETREG, DL, MVT::Other,
-                                         RoundToZero.getValue(0),
-                                         FPRoundToNearest, BitField, InterpP1);
-    SDValue OutputChain = DAG.getNode(ISD::TokenFactor, DL, MVT::Other,
-                                      RoundToNearest, DAG.getRoot());
-    DAG.setRoot(OutputChain);
-    return InterpP1;
   }
   case Intrinsic::amdgcn_interp_p2_f16: {
     SDValue M0 = copyToM0(DAG, DAG.getEntryNode(), DL, Op.getOperand(6));
     SDValue Glue = SDValue(M0.getNode(), 1);
-    const unsigned DPRoundReg = AMDGPU::Hwreg::ID_MODE |
-                                (2 << AMDGPU::Hwreg::OFFSET_SHIFT_) |
-                                (1 << AMDGPU::Hwreg::WIDTH_M1_SHIFT_);
-    const SDValue BitField = DAG.getTargetConstant(DPRoundReg, DL, MVT::i16);
-    SDVTList BindParamVTs = DAG.getVTList(MVT::Other, MVT::Glue);
-    const SDValue DPRoundToZero = DAG.getConstant(FP_ROUND_ROUND_TO_ZERO, DL,
-                                                  MVT::i32);
-    SDValue RoundToZero = DAG.getNode(AMDGPUISD::SETREG, DL, BindParamVTs,
-                                      DAG.getEntryNode(), DPRoundToZero,
-                                      BitField, Glue);
-    Glue = RoundToZero.getValue(1);
     SDValue Ops[] = {
       Op.getOperand(2), // Src0
       Op.getOperand(3), // Attrchan
@@ -5115,17 +5083,7 @@ SDValue SITargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
       DAG.getConstant(0, DL, MVT::i1), // $clamp
       Glue
     };
-    SDValue InterpP2 = DAG.getNode(AMDGPUISD::INTERP_P2_F16, DL, MVT::f16, Ops);
-    const SDValue DPRoundToNearest = DAG.getConstant(
-                                    FP_ROUND_MODE_DP(FP_ROUND_ROUND_TO_NEAREST),
-                                    DL, MVT::i32);
-    SDValue DisableMode = DAG.getNode(AMDGPUISD::SETREG, DL, MVT::Other,
-                                      RoundToZero.getValue(0), DPRoundToNearest,
-                                      BitField, InterpP2);
-    SDValue RoundToNearest = DAG.getNode(ISD::TokenFactor, DL, MVT::Other,
-                                         DisableMode, DAG.getRoot());
-    DAG.setRoot(RoundToNearest);
-    return InterpP2;
+    return DAG.getNode(AMDGPUISD::INTERP_P2_F16, DL, MVT::f16, Ops);
   }
   case Intrinsic::amdgcn_sin:
     return DAG.getNode(AMDGPUISD::SIN_HW, DL, VT, Op.getOperand(1));
