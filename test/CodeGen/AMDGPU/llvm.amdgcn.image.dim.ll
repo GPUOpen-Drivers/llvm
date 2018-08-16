@@ -214,6 +214,19 @@ main_body:
   ret <8 x float> %v
 }
 
+; Do not make dmask 0 even if no result (other than tfe) is used.
+; GCN-LABEL: {{^}}load_mip_2d_tfe_nouse:
+; GCN: v_mov_b32_e32 v3, 0
+; GCN: image_load_mip v[3:4], v[0:3], s[0:7] dmask:0x1 unorm tfe{{$}}
+; NOPRT: v_mov_b32_e32 v3, 0
+; NOPRT: image_load_mip v[2:3], v[0:3], s[0:7] dmask:0x1 unorm tfe{{$}}
+define amdgpu_ps float @load_mip_2d_tfe_nouse(<8 x i32> inreg %rsrc, i32 %s, i32 %t, i32 %mip) {
+main_body:
+  %v = call <8 x float> @llvm.amdgcn.image.load.mip.2d.v8f32.i32(i32 15, i32 %s, i32 %t, i32 %mip, <8 x i32> %rsrc, i32 1, i32 0)
+  %vv = extractelement <8 x float> %v, i32 4
+  ret float %vv
+}
+
 ; GCN-LABEL: {{^}}load_mip_3d:
 ; GCN: image_load_mip v[0:3], v[0:3], s[0:7] dmask:0xf unorm{{$}}
 ; NOPRT: image_load_mip v[0:3], v[0:3], s[0:7] dmask:0xf unorm{{$}}
