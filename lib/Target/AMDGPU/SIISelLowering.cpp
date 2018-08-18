@@ -8744,7 +8744,8 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
   }
 
   // Don't allow 0 dmask, as hardware assumes one channel enabled.
-  if (!NewDmask)
+  bool NoChannels = !NewDmask;
+  if (NoChannels)
     NewDmask = 1;
   // Abort if there's no change
   if (NewDmask == OldDmask)
@@ -8799,10 +8800,12 @@ SDNode *SITargetLowering::adjustWritemask(MachineSDNode *&Node,
   // Update the users of the node with the new indices
   for (unsigned i = 0, Idx = AMDGPU::sub0; i < 5; ++i) {
     SDNode *User = Users[i];
-    if (!User && !(NewDmask >> i & 1))
-      continue;
-
-    if (User) {
+    if (!User) {
+      // Handle the special case of NoChannels. We set NewDmask to 1 above, but
+      // Users[0] is still nullptr because channel 0 doesn't really have a use.
+      if (i || !NoChannels)
+        continue;
+    } else {
       SDValue Op = DAG.getTargetConstant(Idx, SDLoc(User), MVT::i32);
       DAG.UpdateNodeOperands(User, SDValue(NewNode, 0), Op);
     }
