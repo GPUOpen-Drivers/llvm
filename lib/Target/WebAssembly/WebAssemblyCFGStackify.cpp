@@ -127,7 +127,8 @@ static void PlaceBlockMarker(
   // Decide where in Header to put the BLOCK.
   MachineBasicBlock::iterator InsertPos;
   MachineLoop *HeaderLoop = MLI.getLoopFor(Header);
-  if (HeaderLoop && MBB.getNumber() > LoopBottom(HeaderLoop)->getNumber()) {
+  if (HeaderLoop &&
+      MBB.getNumber() > WebAssembly::getBottom(HeaderLoop)->getNumber()) {
     // Header is the header of a loop that does not lexically contain MBB, so
     // the BLOCK needs to be above the LOOP, after any END constructs.
     InsertPos = Header->begin();
@@ -145,9 +146,6 @@ static void PlaceBlockMarker(
            std::prev(InsertPos)->getOpcode() != WebAssembly::END_LOOP)
       --InsertPos;
   }
-  // The header block in which a 'block' mark will be inserted should have a
-  // terminator because it is branching to a non-layout successor.
-  assert(InsertPos != Header->end());
 
   // Add the BLOCK.
   MachineInstr *Begin =
@@ -184,7 +182,7 @@ static void PlaceLoopMarker(
 
   // The operand of a LOOP is the first block after the loop. If the loop is the
   // bottom of the function, insert a dummy block at the end.
-  MachineBasicBlock *Bottom = LoopBottom(Loop);
+  MachineBasicBlock *Bottom = WebAssembly::getBottom(Loop);
   auto Iter = std::next(MachineFunction::iterator(Bottom));
   if (Iter == MF.end()) {
     MachineBasicBlock *Label = MF.CreateMachineBasicBlock();
@@ -366,9 +364,9 @@ static void PlaceMarkers(MachineFunction &MF, const MachineLoopInfo &MLI,
 }
 
 bool WebAssemblyCFGStackify::runOnMachineFunction(MachineFunction &MF) {
-  DEBUG(dbgs() << "********** CFG Stackifying **********\n"
-                  "********** Function: "
-               << MF.getName() << '\n');
+  LLVM_DEBUG(dbgs() << "********** CFG Stackifying **********\n"
+                       "********** Function: "
+                    << MF.getName() << '\n');
 
   const auto &MLI = getAnalysis<MachineLoopInfo>();
   auto &MDT = getAnalysis<MachineDominatorTree>();

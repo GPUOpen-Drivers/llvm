@@ -30,7 +30,7 @@
 #include "llvm/Analysis/ProfileSummaryInfo.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
-#include "llvm/Analysis/Utils/Local.h"
+#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/ISDOpcodes.h"
@@ -462,7 +462,10 @@ bool CodeGenPrepare::runOnFunction(Function &F) {
 
   if (!DisableBranchOpts) {
     MadeChange = false;
-    SmallPtrSet<BasicBlock*, 8> WorkList;
+    // Use a set vector to get deterministic iteration order. The order the
+    // blocks are removed may affect whether or not PHI nodes in successors
+    // are removed.
+    SmallSetVector<BasicBlock*, 8> WorkList;
     for (BasicBlock &BB : F) {
       SmallVector<BasicBlock *, 2> Successors(succ_begin(&BB), succ_end(&BB));
       MadeChange |= ConstantFoldTerminator(&BB, true);
@@ -477,8 +480,7 @@ bool CodeGenPrepare::runOnFunction(Function &F) {
     // Delete the dead blocks and any of their dead successors.
     MadeChange |= !WorkList.empty();
     while (!WorkList.empty()) {
-      BasicBlock *BB = *WorkList.begin();
-      WorkList.erase(BB);
+      BasicBlock *BB = WorkList.pop_back_val();
       SmallVector<BasicBlock*, 2> Successors(succ_begin(BB), succ_end(BB));
 
       DeleteDeadBlock(BB);
@@ -516,8 +518,16 @@ bool CodeGenPrepare::runOnFunction(Function &F) {
 bool CodeGenPrepare::eliminateFallThrough(Function &F) {
   bool Changed = false;
   // Scan all of the blocks in the function, except for the entry block.
-  for (Function::iterator I = std::next(F.begin()), E = F.end(); I != E;) {
-    BasicBlock *BB = &*I++;
+  // Use a temporary array to avoid iterator being invalidated when
+  // deleting blocks.
+  SmallVector<WeakTrackingVH, 16> Blocks;
+  for (auto &Block : llvm::make_range(std::next(F.begin()), F.end()))
+    Blocks.push_back(&Block);
+
+  for (auto &Block : Blocks) {
+    auto *BB = cast_or_null<BasicBlock>(Block);
+    if (!BB)
+      continue;
     // If the destination block has a single pred, then this is a trivial
     // edge, just collapse it.
     BasicBlock *SinglePred = BB->getSinglePredecessor();
@@ -528,17 +538,10 @@ bool CodeGenPrepare::eliminateFallThrough(Function &F) {
     BranchInst *Term = dyn_cast<BranchInst>(SinglePred->getTerminator());
     if (Term && !Term->isConditional()) {
       Changed = true;
-      DEBUG(dbgs() << "To merge:\n"<< *SinglePred << "\n\n\n");
-      // Remember if SinglePred was the entry block of the function.
-      // If so, we will need to move BB back to the entry position.
-      bool isEntry = SinglePred == &SinglePred->getParent()->getEntryBlock();
-      MergeBasicBlockIntoOnlyPred(BB, nullptr);
+      LLVM_DEBUG(dbgs() << "To merge:\n" << *BB << "\n\n\n");
 
-      if (isEntry && BB != &BB->getParent()->getEntryBlock())
-        BB->moveBefore(&BB->getParent()->getEntryBlock());
-
-      // We have erased a block. Update the iterator.
-      I = BB->getIterator();
+      // Merge BB into SinglePred and delete it.
+      MergeBlockIntoPredecessor(BB);
     }
   }
   return Changed;
@@ -591,9 +594,17 @@ bool CodeGenPrepare::eliminateMostlyEmptyBlocks(Function &F) {
   }
 
   bool MadeChange = false;
+  // Copy blocks into a temporary array to avoid iterator invalidation issues
+  // as we remove them.
   // Note that this intentionally skips the entry block.
-  for (Function::iterator I = std::next(F.begin()), E = F.end(); I != E;) {
-    BasicBlock *BB = &*I++;
+  SmallVector<WeakTrackingVH, 16> Blocks;
+  for (auto &Block : llvm::make_range(std::next(F.begin()), F.end()))
+    Blocks.push_back(&Block);
+
+  for (auto &Block : Blocks) {
+    BasicBlock *BB = cast_or_null<BasicBlock>(Block);
+    if (!BB)
+      continue;
     BasicBlock *DestBB = findDestBlockOfMergeableEmptyBlock(BB);
     if (!DestBB ||
         !isMergingEmptyBlockProfitable(BB, DestBB, Preheaders.count(BB)))
@@ -755,21 +766,20 @@ void CodeGenPrepare::eliminateMostlyEmptyBlock(BasicBlock *BB) {
   BranchInst *BI = cast<BranchInst>(BB->getTerminator());
   BasicBlock *DestBB = BI->getSuccessor(0);
 
-  DEBUG(dbgs() << "MERGING MOSTLY EMPTY BLOCKS - BEFORE:\n" << *BB << *DestBB);
+  LLVM_DEBUG(dbgs() << "MERGING MOSTLY EMPTY BLOCKS - BEFORE:\n"
+                    << *BB << *DestBB);
 
   // If the destination block has a single pred, then this is a trivial edge,
   // just collapse it.
   if (BasicBlock *SinglePred = DestBB->getSinglePredecessor()) {
     if (SinglePred != DestBB) {
-      // Remember if SinglePred was the entry block of the function.  If so, we
-      // will need to move BB back to the entry position.
-      bool isEntry = SinglePred == &SinglePred->getParent()->getEntryBlock();
-      MergeBasicBlockIntoOnlyPred(DestBB, nullptr);
-
-      if (isEntry && BB != &BB->getParent()->getEntryBlock())
-        BB->moveBefore(&BB->getParent()->getEntryBlock());
-
-      DEBUG(dbgs() << "AFTER:\n" << *DestBB << "\n\n\n");
+      assert(SinglePred == BB &&
+             "Single predecessor not the same as predecessor");
+      // Merge DestBB into SinglePred/BB and delete it.
+      MergeBlockIntoPredecessor(DestBB);
+      // Note: BB(=SinglePred) will not be deleted on this path.
+      // DestBB(=its single successor) is the one that was deleted.
+      LLVM_DEBUG(dbgs() << "AFTER:\n" << *SinglePred << "\n\n\n");
       return;
     }
   }
@@ -807,7 +817,7 @@ void CodeGenPrepare::eliminateMostlyEmptyBlock(BasicBlock *BB) {
   BB->eraseFromParent();
   ++NumBlocksElim;
 
-  DEBUG(dbgs() << "AFTER:\n" << *DestBB << "\n\n\n");
+  LLVM_DEBUG(dbgs() << "AFTER:\n" << *DestBB << "\n\n\n");
 }
 
 // Computes a map of base pointer relocation instructions to corresponding
@@ -1049,6 +1059,7 @@ static bool SinkCast(CastInst *CI) {
       assert(InsertPt != UserBB->end());
       InsertedCast = CastInst::Create(CI->getOpcode(), CI->getOperand(0),
                                       CI->getType(), "", &*InsertPt);
+      InsertedCast->setDebugLoc(CI->getDebugLoc());
     }
 
     // Replace a use of the cast with a use of the new cast.
@@ -1272,8 +1283,8 @@ static bool sinkAndCmp0Expression(Instruction *AndI,
   if (!TLI.isMaskAndCmp0FoldingBeneficial(*AndI))
     return false;
 
-  DEBUG(dbgs() << "found 'and' feeding only icmp 0;\n");
-  DEBUG(AndI->getParent()->dump());
+  LLVM_DEBUG(dbgs() << "found 'and' feeding only icmp 0;\n");
+  LLVM_DEBUG(AndI->getParent()->dump());
 
   // Push the 'and' into the same block as the icmp 0.  There should only be
   // one (icmp (and, 0)) in each block, since CSE/GVN should have removed any
@@ -1286,7 +1297,7 @@ static bool sinkAndCmp0Expression(Instruction *AndI,
     // Preincrement use iterator so we don't invalidate it.
     ++UI;
 
-    DEBUG(dbgs() << "sinking 'and' use: " << *User << "\n");
+    LLVM_DEBUG(dbgs() << "sinking 'and' use: " << *User << "\n");
 
     // Keep the 'and' in the same place if the use is already in the same block.
     Instruction *InsertPt =
@@ -1300,7 +1311,7 @@ static bool sinkAndCmp0Expression(Instruction *AndI,
     // Replace a use of the 'and' with a use of the new 'and'.
     TheUse = InsertedAnd;
     ++NumAndUses;
-    DEBUG(User->getParent()->dump());
+    LLVM_DEBUG(User->getParent()->dump());
   }
 
   // We removed all uses, nuke the and.
@@ -1413,7 +1424,7 @@ SinkShiftAndTruncate(BinaryOperator *ShiftI, Instruction *User, ConstantInt *CI,
 ///   %x.extract.shift.1 = lshr i64 %arg1, 32
 ///   %x.extract.trunc = trunc i64 %x.extract.shift.1 to i16
 ///
-/// CodeGen will recoginze the pattern in BB2 and generate BitExtract
+/// CodeGen will recognize the pattern in BB2 and generate BitExtract
 /// instruction.
 /// Return true if any changes are made.
 static bool OptimizeExtractBits(BinaryOperator *ShiftI, ConstantInt *CI,
@@ -1459,7 +1470,7 @@ static bool OptimizeExtractBits(BinaryOperator *ShiftI, ConstantInt *CI,
       // cmp i16 trunc.result, opnd2
       //
       if (isa<TruncInst>(User) && shiftIsLegal
-          // If the type of the truncate is legal, no trucate will be
+          // If the type of the truncate is legal, no truncate will be
           // introduced in other basic blocks.
           &&
           (!TLI.isTypeLegal(TLI.getValueType(DL, User->getType()))))
@@ -1693,6 +1704,7 @@ bool CodeGenPrepare::optimizeCallInst(CallInst *CI, bool &ModifiedDT) {
       return true;
     }
     case Intrinsic::launder_invariant_group:
+    case Intrinsic::strip_invariant_group:
       II->replaceAllUsesWith(II->getArgOperand(0));
       II->eraseFromParent();
       return true;
@@ -2085,7 +2097,7 @@ class TypePromotionTransaction {
     /// Position of an instruction.
     /// Either an instruction:
     /// - Is the first in a basic block: BB is used.
-    /// - Has a previous instructon: PrevInst is used.
+    /// - Has a previous instruction: PrevInst is used.
     union {
       Instruction *PrevInst;
       BasicBlock *BB;
@@ -2130,13 +2142,14 @@ class TypePromotionTransaction {
     /// Move \p Inst before \p Before.
     InstructionMoveBefore(Instruction *Inst, Instruction *Before)
         : TypePromotionAction(Inst), Position(Inst) {
-      DEBUG(dbgs() << "Do: move: " << *Inst << "\nbefore: " << *Before << "\n");
+      LLVM_DEBUG(dbgs() << "Do: move: " << *Inst << "\nbefore: " << *Before
+                        << "\n");
       Inst->moveBefore(Before);
     }
 
     /// Move the instruction back to its original position.
     void undo() override {
-      DEBUG(dbgs() << "Undo: moveBefore: " << *Inst << "\n");
+      LLVM_DEBUG(dbgs() << "Undo: moveBefore: " << *Inst << "\n");
       Position.insert(Inst);
     }
   };
@@ -2153,18 +2166,18 @@ class TypePromotionTransaction {
     /// Set \p Idx operand of \p Inst with \p NewVal.
     OperandSetter(Instruction *Inst, unsigned Idx, Value *NewVal)
         : TypePromotionAction(Inst), Idx(Idx) {
-      DEBUG(dbgs() << "Do: setOperand: " << Idx << "\n"
-                   << "for:" << *Inst << "\n"
-                   << "with:" << *NewVal << "\n");
+      LLVM_DEBUG(dbgs() << "Do: setOperand: " << Idx << "\n"
+                        << "for:" << *Inst << "\n"
+                        << "with:" << *NewVal << "\n");
       Origin = Inst->getOperand(Idx);
       Inst->setOperand(Idx, NewVal);
     }
 
     /// Restore the original value of the instruction.
     void undo() override {
-      DEBUG(dbgs() << "Undo: setOperand:" << Idx << "\n"
-                   << "for: " << *Inst << "\n"
-                   << "with: " << *Origin << "\n");
+      LLVM_DEBUG(dbgs() << "Undo: setOperand:" << Idx << "\n"
+                        << "for: " << *Inst << "\n"
+                        << "with: " << *Origin << "\n");
       Inst->setOperand(Idx, Origin);
     }
   };
@@ -2178,7 +2191,7 @@ class TypePromotionTransaction {
   public:
     /// Remove \p Inst from the uses of the operands of \p Inst.
     OperandsHider(Instruction *Inst) : TypePromotionAction(Inst) {
-      DEBUG(dbgs() << "Do: OperandsHider: " << *Inst << "\n");
+      LLVM_DEBUG(dbgs() << "Do: OperandsHider: " << *Inst << "\n");
       unsigned NumOpnds = Inst->getNumOperands();
       OriginalValues.reserve(NumOpnds);
       for (unsigned It = 0; It < NumOpnds; ++It) {
@@ -2194,7 +2207,7 @@ class TypePromotionTransaction {
 
     /// Restore the original list of uses.
     void undo() override {
-      DEBUG(dbgs() << "Undo: OperandsHider: " << *Inst << "\n");
+      LLVM_DEBUG(dbgs() << "Undo: OperandsHider: " << *Inst << "\n");
       for (unsigned It = 0, EndIt = OriginalValues.size(); It != EndIt; ++It)
         Inst->setOperand(It, OriginalValues[It]);
     }
@@ -2211,7 +2224,7 @@ class TypePromotionTransaction {
     TruncBuilder(Instruction *Opnd, Type *Ty) : TypePromotionAction(Opnd) {
       IRBuilder<> Builder(Opnd);
       Val = Builder.CreateTrunc(Opnd, Ty, "promoted");
-      DEBUG(dbgs() << "Do: TruncBuilder: " << *Val << "\n");
+      LLVM_DEBUG(dbgs() << "Do: TruncBuilder: " << *Val << "\n");
     }
 
     /// Get the built value.
@@ -2219,7 +2232,7 @@ class TypePromotionTransaction {
 
     /// Remove the built instruction.
     void undo() override {
-      DEBUG(dbgs() << "Undo: TruncBuilder: " << *Val << "\n");
+      LLVM_DEBUG(dbgs() << "Undo: TruncBuilder: " << *Val << "\n");
       if (Instruction *IVal = dyn_cast<Instruction>(Val))
         IVal->eraseFromParent();
     }
@@ -2237,7 +2250,7 @@ class TypePromotionTransaction {
         : TypePromotionAction(InsertPt) {
       IRBuilder<> Builder(InsertPt);
       Val = Builder.CreateSExt(Opnd, Ty, "promoted");
-      DEBUG(dbgs() << "Do: SExtBuilder: " << *Val << "\n");
+      LLVM_DEBUG(dbgs() << "Do: SExtBuilder: " << *Val << "\n");
     }
 
     /// Get the built value.
@@ -2245,7 +2258,7 @@ class TypePromotionTransaction {
 
     /// Remove the built instruction.
     void undo() override {
-      DEBUG(dbgs() << "Undo: SExtBuilder: " << *Val << "\n");
+      LLVM_DEBUG(dbgs() << "Undo: SExtBuilder: " << *Val << "\n");
       if (Instruction *IVal = dyn_cast<Instruction>(Val))
         IVal->eraseFromParent();
     }
@@ -2263,7 +2276,7 @@ class TypePromotionTransaction {
         : TypePromotionAction(InsertPt) {
       IRBuilder<> Builder(InsertPt);
       Val = Builder.CreateZExt(Opnd, Ty, "promoted");
-      DEBUG(dbgs() << "Do: ZExtBuilder: " << *Val << "\n");
+      LLVM_DEBUG(dbgs() << "Do: ZExtBuilder: " << *Val << "\n");
     }
 
     /// Get the built value.
@@ -2271,7 +2284,7 @@ class TypePromotionTransaction {
 
     /// Remove the built instruction.
     void undo() override {
-      DEBUG(dbgs() << "Undo: ZExtBuilder: " << *Val << "\n");
+      LLVM_DEBUG(dbgs() << "Undo: ZExtBuilder: " << *Val << "\n");
       if (Instruction *IVal = dyn_cast<Instruction>(Val))
         IVal->eraseFromParent();
     }
@@ -2286,15 +2299,15 @@ class TypePromotionTransaction {
     /// Mutate the type of \p Inst into \p NewTy.
     TypeMutator(Instruction *Inst, Type *NewTy)
         : TypePromotionAction(Inst), OrigTy(Inst->getType()) {
-      DEBUG(dbgs() << "Do: MutateType: " << *Inst << " with " << *NewTy
-                   << "\n");
+      LLVM_DEBUG(dbgs() << "Do: MutateType: " << *Inst << " with " << *NewTy
+                        << "\n");
       Inst->mutateType(NewTy);
     }
 
     /// Mutate the instruction back to its original type.
     void undo() override {
-      DEBUG(dbgs() << "Undo: MutateType: " << *Inst << " with " << *OrigTy
-                   << "\n");
+      LLVM_DEBUG(dbgs() << "Undo: MutateType: " << *Inst << " with " << *OrigTy
+                        << "\n");
       Inst->mutateType(OrigTy);
     }
   };
@@ -2321,8 +2334,8 @@ class TypePromotionTransaction {
   public:
     /// Replace all the use of \p Inst by \p New.
     UsesReplacer(Instruction *Inst, Value *New) : TypePromotionAction(Inst) {
-      DEBUG(dbgs() << "Do: UsersReplacer: " << *Inst << " with " << *New
-                   << "\n");
+      LLVM_DEBUG(dbgs() << "Do: UsersReplacer: " << *Inst << " with " << *New
+                        << "\n");
       // Record the original uses.
       for (Use &U : Inst->uses()) {
         Instruction *UserI = cast<Instruction>(U.getUser());
@@ -2334,7 +2347,7 @@ class TypePromotionTransaction {
 
     /// Reassign the original uses of Inst to Inst.
     void undo() override {
-      DEBUG(dbgs() << "Undo: UsersReplacer: " << *Inst << "\n");
+      LLVM_DEBUG(dbgs() << "Undo: UsersReplacer: " << *Inst << "\n");
       for (use_iterator UseIt = OriginalUses.begin(),
                         EndIt = OriginalUses.end();
            UseIt != EndIt; ++UseIt) {
@@ -2359,7 +2372,7 @@ class TypePromotionTransaction {
     SetOfInstrs &RemovedInsts;
 
   public:
-    /// Remove all reference of \p Inst and optinally replace all its
+    /// Remove all reference of \p Inst and optionally replace all its
     /// uses with New.
     /// \p RemovedInsts Keep track of the instructions removed by this Action.
     /// \pre If !Inst->use_empty(), then New != nullptr
@@ -2369,7 +2382,7 @@ class TypePromotionTransaction {
           RemovedInsts(RemovedInsts) {
       if (New)
         Replacer = new UsesReplacer(Inst, New);
-      DEBUG(dbgs() << "Do: InstructionRemover: " << *Inst << "\n");
+      LLVM_DEBUG(dbgs() << "Do: InstructionRemover: " << *Inst << "\n");
       RemovedInsts.insert(Inst);
       /// The instructions removed here will be freed after completing
       /// optimizeBlock() for all blocks as we need to keep track of the
@@ -2382,7 +2395,7 @@ class TypePromotionTransaction {
     /// Resurrect the instruction and reassign it to the proper uses if
     /// new value was provided when build this action.
     void undo() override {
-      DEBUG(dbgs() << "Undo: InstructionRemover: " << *Inst << "\n");
+      LLVM_DEBUG(dbgs() << "Undo: InstructionRemover: " << *Inst << "\n");
       Inserter.insert(Inst);
       if (Replacer)
         Replacer->undo();
@@ -2860,7 +2873,7 @@ private:
 
   /// We have mapping between value A and basic block where value A
   /// seen to other value B where B was a field in addressing mode represented
-  /// by A. Also we have an original value C representin an address in some
+  /// by A. Also we have an original value C representing an address in some
   /// basic block. Traversing from C through phi and selects we ended up with
   /// A's in a map. This utility function tries to find a value V which is a
   /// field in addressing mode C and traversing through phi nodes and selects
@@ -3345,7 +3358,7 @@ public:
                             SmallVectorImpl<Instruction *> *Truncs,
                             const TargetLowering &TLI);
 
-  /// Given a sign/zero extend instruction \p Ext, return the approriate
+  /// Given a sign/zero extend instruction \p Ext, return the appropriate
   /// action to promote the operand of \p Ext instead of using Ext.
   /// \return NULL if no promotable action is possible with the current
   /// sign extension.
@@ -3592,19 +3605,19 @@ Value *TypePromotionHelper::promoteOperandForOther(
   // Step #3.
   Instruction *ExtForOpnd = Ext;
 
-  DEBUG(dbgs() << "Propagate Ext to operands\n");
+  LLVM_DEBUG(dbgs() << "Propagate Ext to operands\n");
   for (int OpIdx = 0, EndOpIdx = ExtOpnd->getNumOperands(); OpIdx != EndOpIdx;
        ++OpIdx) {
-    DEBUG(dbgs() << "Operand:\n" << *(ExtOpnd->getOperand(OpIdx)) << '\n');
+    LLVM_DEBUG(dbgs() << "Operand:\n" << *(ExtOpnd->getOperand(OpIdx)) << '\n');
     if (ExtOpnd->getOperand(OpIdx)->getType() == Ext->getType() ||
         !shouldExtOperand(ExtOpnd, OpIdx)) {
-      DEBUG(dbgs() << "No need to propagate\n");
+      LLVM_DEBUG(dbgs() << "No need to propagate\n");
       continue;
     }
     // Check if we can statically extend the operand.
     Value *Opnd = ExtOpnd->getOperand(OpIdx);
     if (const ConstantInt *Cst = dyn_cast<ConstantInt>(Opnd)) {
-      DEBUG(dbgs() << "Statically extend\n");
+      LLVM_DEBUG(dbgs() << "Statically extend\n");
       unsigned BitWidth = Ext->getType()->getIntegerBitWidth();
       APInt CstVal = IsSExt ? Cst->getValue().sext(BitWidth)
                             : Cst->getValue().zext(BitWidth);
@@ -3613,16 +3626,16 @@ Value *TypePromotionHelper::promoteOperandForOther(
     }
     // UndefValue are typed, so we have to statically sign extend them.
     if (isa<UndefValue>(Opnd)) {
-      DEBUG(dbgs() << "Statically extend\n");
+      LLVM_DEBUG(dbgs() << "Statically extend\n");
       TPT.setOperand(ExtOpnd, OpIdx, UndefValue::get(Ext->getType()));
       continue;
     }
 
-    // Otherwise we have to explicity sign extend the operand.
+    // Otherwise we have to explicitly sign extend the operand.
     // Check if Ext was reused to extend an operand.
     if (!ExtForOpnd) {
       // If yes, create a new one.
-      DEBUG(dbgs() << "More operands to ext\n");
+      LLVM_DEBUG(dbgs() << "More operands to ext\n");
       Value *ValForExtOpnd = IsSExt ? TPT.createSExt(Ext, Opnd, Ext->getType())
         : TPT.createZExt(Ext, Opnd, Ext->getType());
       if (!isa<Instruction>(ValForExtOpnd)) {
@@ -3643,7 +3656,7 @@ Value *TypePromotionHelper::promoteOperandForOther(
     ExtForOpnd = nullptr;
   }
   if (ExtForOpnd == Ext) {
-    DEBUG(dbgs() << "Extension is useless now\n");
+    LLVM_DEBUG(dbgs() << "Extension is useless now\n");
     TPT.eraseInstruction(Ext);
   }
   return ExtOpnd;
@@ -3659,7 +3672,8 @@ Value *TypePromotionHelper::promoteOperandForOther(
 /// \return True if the promotion is profitable, false otherwise.
 bool AddressingModeMatcher::isPromotionProfitable(
     unsigned NewCost, unsigned OldCost, Value *PromotedOperand) const {
-  DEBUG(dbgs() << "OldCost: " << OldCost << "\tNewCost: " << NewCost << '\n');
+  LLVM_DEBUG(dbgs() << "OldCost: " << OldCost << "\tNewCost: " << NewCost
+                    << '\n');
   // The cost of the new extensions is greater than the cost of the
   // old extension plus what we folded.
   // This is not profitable.
@@ -3930,7 +3944,7 @@ bool AddressingModeMatcher::matchOperationAddr(User *AddrInst, unsigned Opcode,
                                PromotedOperand)) {
       AddrMode = BackupAddrMode;
       AddrModeInsts.resize(OldSize);
-      DEBUG(dbgs() << "Sign extension does not pay off: rollback\n");
+      LLVM_DEBUG(dbgs() << "Sign extension does not pay off: rollback\n");
       TPT.rollback(LastKnownGood);
       return false;
     }
@@ -4393,7 +4407,8 @@ bool CodeGenPrepare::optimizeMemoryInst(Instruction *MemoryInst, Value *Addr,
   if (!PhiOrSelectSeen && none_of(AddrModeInsts, [&](Value *V) {
         return IsNonLocalValue(V, MemoryInst->getParent());
                   })) {
-    DEBUG(dbgs() << "CGP: Found      local addrmode: " << AddrMode << "\n");
+    LLVM_DEBUG(dbgs() << "CGP: Found      local addrmode: " << AddrMode
+                      << "\n");
     return false;
   }
 
@@ -4412,16 +4427,16 @@ bool CodeGenPrepare::optimizeMemoryInst(Instruction *MemoryInst, Value *Addr,
 
   Value * SunkAddr = SunkAddrVH.pointsToAliveValue() ? SunkAddrVH : nullptr;
   if (SunkAddr) {
-    DEBUG(dbgs() << "CGP: Reusing nonlocal addrmode: " << AddrMode << " for "
-                 << *MemoryInst << "\n");
+    LLVM_DEBUG(dbgs() << "CGP: Reusing nonlocal addrmode: " << AddrMode
+                      << " for " << *MemoryInst << "\n");
     if (SunkAddr->getType() != Addr->getType())
       SunkAddr = Builder.CreatePointerCast(SunkAddr, Addr->getType());
   } else if (AddrSinkUsingGEPs ||
              (!AddrSinkUsingGEPs.getNumOccurrences() && TM && TTI->useAA())) {
     // By default, we use the GEP-based method when AA is used later. This
     // prevents new inttoptr/ptrtoint pairs from degrading AA capabilities.
-    DEBUG(dbgs() << "CGP: SINKING nonlocal addrmode: " << AddrMode << " for "
-                 << *MemoryInst << "\n");
+    LLVM_DEBUG(dbgs() << "CGP: SINKING nonlocal addrmode: " << AddrMode
+                      << " for " << *MemoryInst << "\n");
     Type *IntPtrTy = DL->getIntPtrType(Addr->getType());
     Value *ResultPtr = nullptr, *ResultIndex = nullptr;
 
@@ -4560,8 +4575,8 @@ bool CodeGenPrepare::optimizeMemoryInst(Instruction *MemoryInst, Value *Addr,
          DL->isNonIntegralPointerType(AddrMode.BaseGV->getType())))
       return false;
 
-    DEBUG(dbgs() << "CGP: SINKING nonlocal addrmode: " << AddrMode << " for "
-                 << *MemoryInst << "\n");
+    LLVM_DEBUG(dbgs() << "CGP: SINKING nonlocal addrmode: " << AddrMode
+                      << " for " << *MemoryInst << "\n");
     Type *IntPtrTy = DL->getIntPtrType(Addr->getType());
     Value *Result = nullptr;
 
@@ -4861,7 +4876,7 @@ bool CodeGenPrepare::mergeSExts(Function &F) {
         }
         if (!DT.dominates(Pt, Inst))
           // Give up if we need to merge in a common dominator as the
-          // expermients show it is not profitable.
+          // experiments show it is not profitable.
           continue;
         Inst->replaceAllUsesWith(Pt);
         RemovedInsts.insert(Inst);
@@ -5927,8 +5942,9 @@ class VectorPromoteHelper {
       VectorCost += TTI.getArithmeticInstrCost(Inst->getOpcode(), PromotedType,
                                                Arg0OVK, Arg1OVK);
     }
-    DEBUG(dbgs() << "Estimated cost of computation to be promoted:\nScalar: "
-                 << ScalarCost << "\nVector: " << VectorCost << '\n');
+    LLVM_DEBUG(
+        dbgs() << "Estimated cost of computation to be promoted:\nScalar: "
+               << ScalarCost << "\nVector: " << VectorCost << '\n');
     return ScalarCost > VectorCost;
   }
 
@@ -6133,35 +6149,36 @@ bool CodeGenPrepare::optimizeExtractElementInst(Instruction *Inst) {
   //   => we would need to check that we are moving it at a cheaper place and
   //      we do not do that for now.
   BasicBlock *Parent = Inst->getParent();
-  DEBUG(dbgs() << "Found an interesting transition: " << *Inst << '\n');
+  LLVM_DEBUG(dbgs() << "Found an interesting transition: " << *Inst << '\n');
   VectorPromoteHelper VPH(*DL, *TLI, *TTI, Inst, CombineCost);
   // If the transition has more than one use, assume this is not going to be
   // beneficial.
   while (Inst->hasOneUse()) {
     Instruction *ToBePromoted = cast<Instruction>(*Inst->user_begin());
-    DEBUG(dbgs() << "Use: " << *ToBePromoted << '\n');
+    LLVM_DEBUG(dbgs() << "Use: " << *ToBePromoted << '\n');
 
     if (ToBePromoted->getParent() != Parent) {
-      DEBUG(dbgs() << "Instruction to promote is in a different block ("
-                   << ToBePromoted->getParent()->getName()
-                   << ") than the transition (" << Parent->getName() << ").\n");
+      LLVM_DEBUG(dbgs() << "Instruction to promote is in a different block ("
+                        << ToBePromoted->getParent()->getName()
+                        << ") than the transition (" << Parent->getName()
+                        << ").\n");
       return false;
     }
 
     if (VPH.canCombine(ToBePromoted)) {
-      DEBUG(dbgs() << "Assume " << *Inst << '\n'
-                   << "will be combined with: " << *ToBePromoted << '\n');
+      LLVM_DEBUG(dbgs() << "Assume " << *Inst << '\n'
+                        << "will be combined with: " << *ToBePromoted << '\n');
       VPH.recordCombineInstruction(ToBePromoted);
       bool Changed = VPH.promote();
       NumStoreExtractExposed += Changed;
       return Changed;
     }
 
-    DEBUG(dbgs() << "Try promoting.\n");
+    LLVM_DEBUG(dbgs() << "Try promoting.\n");
     if (!VPH.canPromote(ToBePromoted) || !VPH.shouldPromote(ToBePromoted))
       return false;
 
-    DEBUG(dbgs() << "Promoting is possible... Enqueue for promotion!\n");
+    LLVM_DEBUG(dbgs() << "Promoting is possible... Enqueue for promotion!\n");
 
     VPH.enqueueForPromotion(ToBePromoted);
     Inst = ToBePromoted;
@@ -6171,7 +6188,7 @@ bool CodeGenPrepare::optimizeExtractElementInst(Instruction *Inst) {
 
 /// For the instruction sequence of store below, F and I values
 /// are bundled together as an i64 value before being stored into memory.
-/// Sometimes it is more efficent to generate separate stores for F and I,
+/// Sometimes it is more efficient to generate separate stores for F and I,
 /// which can remove the bitwise instructions or sink them to colder places.
 ///
 ///   (store (or (zext (bitcast F to i32) to i64),
@@ -6552,6 +6569,7 @@ bool CodeGenPrepare::optimizeInst(Instruction *I, bool &ModifiedDT) {
       /// The GEP operand must be a pointer, so must its result -> BitCast
       Instruction *NC = new BitCastInst(GEPI->getOperand(0), GEPI->getType(),
                                         GEPI->getName(), GEPI);
+      NC->setDebugLoc(GEPI->getDebugLoc());
       GEPI->replaceAllUsesWith(NC);
       GEPI->eraseFromParent();
       ++NumGEPsElim;
@@ -6656,7 +6674,8 @@ bool CodeGenPrepare::placeDbgValues(Function &F) {
         // after it.
         if (isa<PHINode>(VI) && VI->getParent()->getTerminator()->isEHPad())
           continue;
-        DEBUG(dbgs() << "Moving Debug Value before :\n" << *DVI << ' ' << *VI);
+        LLVM_DEBUG(dbgs() << "Moving Debug Value before :\n"
+                          << *DVI << ' ' << *VI);
         DVI->removeFromParent();
         if (isa<PHINode>(VI))
           DVI->insertBefore(&*VI->getParent()->getFirstInsertionPt());
@@ -6735,7 +6754,7 @@ bool CodeGenPrepare::splitBranchCondition(Function &F) {
         !match(Cond2, m_CombineOr(m_Cmp(), m_BinOp()))   )
       continue;
 
-    DEBUG(dbgs() << "Before branch condition splitting\n"; BB.dump());
+    LLVM_DEBUG(dbgs() << "Before branch condition splitting\n"; BB.dump());
 
     // Create a new BB.
     auto TmpBB =
@@ -6747,8 +6766,8 @@ bool CodeGenPrepare::splitBranchCondition(Function &F) {
     Br1->setCondition(Cond1);
     LogicOp->eraseFromParent();
 
-    // Depending on the conditon we have to either replace the true or the false
-    // successor of the original branch instruction.
+    // Depending on the condition we have to either replace the true or the
+    // false successor of the original branch instruction.
     if (Opc == Instruction::And)
       Br1->setSuccessor(0, TmpBB);
     else
@@ -6801,8 +6820,8 @@ bool CodeGenPrepare::splitBranchCondition(Function &F) {
       // We have flexibility in setting Prob for BB1 and Prob for NewBB.
       // The requirement is that
       //   TrueProb for BB1 + (FalseProb for BB1 * TrueProb for TmpBB)
-      //     = TrueProb for orignal BB.
-      // Assuming the orignal weights are A and B, one choice is to set BB1's
+      //     = TrueProb for original BB.
+      // Assuming the original weights are A and B, one choice is to set BB1's
       // weights to A and A+2B, and set TmpBB's weights to A and 2B. This choice
       // assumes that
       //   TrueProb for BB1 == FalseProb for BB1 * TrueProb for TmpBB.
@@ -6836,8 +6855,8 @@ bool CodeGenPrepare::splitBranchCondition(Function &F) {
       // We have flexibility in setting Prob for BB1 and Prob for TmpBB.
       // The requirement is that
       //   FalseProb for BB1 + (TrueProb for BB1 * FalseProb for TmpBB)
-      //     = FalseProb for orignal BB.
-      // Assuming the orignal weights are A and B, one choice is to set BB1's
+      //     = FalseProb for original BB.
+      // Assuming the original weights are A and B, one choice is to set BB1's
       // weights to 2A+B and B, and set TmpBB's weights to 2A and B. This choice
       // assumes that
       //   FalseProb for BB1 == TrueProb for BB1 * FalseProb for TmpBB.
@@ -6863,8 +6882,8 @@ bool CodeGenPrepare::splitBranchCondition(Function &F) {
 
     MadeChange = true;
 
-    DEBUG(dbgs() << "After branch condition splitting\n"; BB.dump();
-          TmpBB->dump());
+    LLVM_DEBUG(dbgs() << "After branch condition splitting\n"; BB.dump();
+               TmpBB->dump());
   }
   return MadeChange;
 }

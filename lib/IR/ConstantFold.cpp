@@ -545,7 +545,11 @@ Constant *llvm::ConstantFoldCastInstruction(unsigned opc, Constant *V,
                opc != Instruction::AddrSpaceCast &&
                // Do not fold bitcast (gep) with inrange index, as this loses
                // information.
-               !cast<GEPOperator>(CE)->getInRangeIndex().hasValue()) {
+               !cast<GEPOperator>(CE)->getInRangeIndex().hasValue() &&
+               // Do not fold if the gep type is a vector, as bitcasting
+               // operand 0 of a vector gep will result in a bitcast between
+               // different sizes.
+               !CE->getType()->isVectorTy()) {
       // If all of the indexes in the GEP are null values, there is no pointer
       // adjustment going on.  We might as well cast the source pointer.
       bool isAllNull = true;
@@ -678,13 +682,8 @@ Constant *llvm::ConstantFoldCastInstruction(unsigned opc, Constant *V,
       const APInt &api = CI->getValue();
       APFloat apf(DestTy->getFltSemantics(),
                   APInt::getNullValue(DestTy->getPrimitiveSizeInBits()));
-      if (APFloat::opOverflow &
-          apf.convertFromAPInt(api, opc==Instruction::SIToFP,
-                              APFloat::rmNearestTiesToEven)) {
-        // Undefined behavior invoked - the destination type can't represent
-        // the input constant.
-        return UndefValue::get(DestTy);
-      }
+      apf.convertFromAPInt(api, opc==Instruction::SIToFP,
+                           APFloat::rmNearestTiesToEven);
       return ConstantFP::get(V->getContext(), apf);
     }
     return nullptr;
@@ -1228,9 +1227,7 @@ Constant *llvm::ConstantFoldBinaryInstruction(unsigned Opcode,
       Constant *RHS = ConstantExpr::getExtractElement(C2, ExtractIdx);
 
       // If any element of a divisor vector is zero, the whole op is undef.
-      if ((Opcode == Instruction::SDiv || Opcode == Instruction::UDiv ||
-           Opcode == Instruction::SRem || Opcode == Instruction::URem) &&
-          RHS->isNullValue())
+      if (Instruction::isIntDivRem(Opcode) && RHS->isNullValue())
         return UndefValue::get(VTy);
 
       Result.push_back(ConstantExpr::get(Opcode, LHS, RHS));
@@ -1503,7 +1500,8 @@ static ICmpInst::Predicate evaluateICmpRelation(Constant *V1, Constant *V2,
       assert(isa<ConstantPointerNull>(V2) && "Canonicalization guarantee!");
       // GlobalVals can never be null unless they have external weak linkage.
       // We don't try to evaluate aliases here.
-      if (!GV->hasExternalWeakLinkage() && !isa<GlobalAlias>(GV))
+      if (!GV->hasExternalWeakLinkage() && !isa<GlobalAlias>(GV) &&
+          GV->getType()->getAddressSpace() == 0)
         return ICmpInst::ICMP_NE;
     }
   } else if (const BlockAddress *BA = dyn_cast<BlockAddress>(V1)) {
@@ -1733,7 +1731,8 @@ Constant *llvm::ConstantFoldCompareInstruction(unsigned short pred,
   if (C1->isNullValue()) {
     if (const GlobalValue *GV = dyn_cast<GlobalValue>(C2))
       // Don't try to evaluate aliases.  External weak GV can be null.
-      if (!isa<GlobalAlias>(GV) && !GV->hasExternalWeakLinkage()) {
+      if (!isa<GlobalAlias>(GV) && !GV->hasExternalWeakLinkage() &&
+          GV->getType()->getAddressSpace() == 0) {
         if (pred == ICmpInst::ICMP_EQ)
           return ConstantInt::getFalse(C1->getContext());
         else if (pred == ICmpInst::ICMP_NE)
@@ -1743,7 +1742,8 @@ Constant *llvm::ConstantFoldCompareInstruction(unsigned short pred,
   } else if (C2->isNullValue()) {
     if (const GlobalValue *GV = dyn_cast<GlobalValue>(C1))
       // Don't try to evaluate aliases.  External weak GV can be null.
-      if (!isa<GlobalAlias>(GV) && !GV->hasExternalWeakLinkage()) {
+      if (!isa<GlobalAlias>(GV) && !GV->hasExternalWeakLinkage() &&
+          GV->getType()->getAddressSpace() == 0) {
         if (pred == ICmpInst::ICMP_EQ)
           return ConstantInt::getFalse(C1->getContext());
         else if (pred == ICmpInst::ICMP_NE)

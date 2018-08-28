@@ -679,9 +679,11 @@ public:
   Metadata *getRawScope() const { return getOperand(1); }
   MDString *getRawName() const { return getOperandAs<MDString>(2); }
 
-  void setFlags(DIFlags NewFlags) {
-    assert(!isUniqued() && "Cannot set flags on uniqued nodes");
-    Flags = NewFlags;
+  /// Returns a new temporary DIType with updated Flags
+  TempDIType cloneWithFlags(DIFlags NewFlags) const {
+    auto NewTy = clone();
+    NewTy->Flags = NewFlags;
+    return NewTy;
   }
 
   bool isPrivate() const {
@@ -866,7 +868,8 @@ public:
   /// Get extra data associated with this derived type.
   ///
   /// Class type for pointer-to-members, objective-c property node for ivars,
-  /// or global constant wrapper for static members.
+  /// global constant wrapper for static members, or virtual base pointer offset
+  /// for inheritance.
   ///
   /// TODO: Separate out types that need this extra operand: pointer-to-member
   /// types and member fields (static members and ivars).
@@ -882,6 +885,14 @@ public:
 
   DIObjCProperty *getObjCProperty() const {
     return dyn_cast_or_null<DIObjCProperty>(getExtraData());
+  }
+
+  uint32_t getVBPtrOffset() const {
+    assert(getTag() == dwarf::DW_TAG_inheritance);
+    if (auto *CM = cast_or_null<ConstantAsMetadata>(getExtraData()))
+      if (auto *CI = dyn_cast_or_null<ConstantInt>(CM->getValue()))
+        return static_cast<uint32_t>(CI->getZExtValue());
+    return 0;
   }
 
   Constant *getStorageOffsetInBits() const {
@@ -1669,6 +1680,13 @@ public:
        ThrownTypes))
 
   TempDISubprogram clone() const { return cloneImpl(); }
+
+  /// Returns a new temporary DISubprogram with updated Flags
+  TempDISubprogram cloneWithFlags(DIFlags NewFlags) const {
+    auto NewSP = clone();
+    NewSP->Flags = NewFlags;
+    return NewSP;
+  }
 
 public:
   unsigned getLine() const { return Line; }

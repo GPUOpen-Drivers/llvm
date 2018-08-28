@@ -10,9 +10,9 @@
 //
 
 #include "AMDGPU.h"
-#include "AMDGPUMCInstLower.h"
 #include "AMDGPUSubtarget.h"
 #include "SIInstrInfo.h"
+#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
@@ -495,7 +495,7 @@ bool SIShrinkInstructions::runOnMachineFunction(MachineFunction &MF) {
       }
 
       // We can shrink this instruction
-      DEBUG(dbgs() << "Shrinking " << MI);
+      LLVM_DEBUG(dbgs() << "Shrinking " << MI);
 
       MachineInstrBuilder Inst32 =
           BuildMI(MBB, I, MI.getDebugLoc(), TII->get(Op32));
@@ -539,9 +539,7 @@ bool SIShrinkInstructions::runOnMachineFunction(MachineFunction &MF) {
       MI.eraseFromParent();
       foldImmediates(*Inst32, TII, MRI);
 
-      DEBUG(dbgs() << "e32 MI = " << *Inst32 << '\n');
-
-
+      LLVM_DEBUG(dbgs() << "e32 MI = " << *Inst32 << '\n');
     }
   }
   return false;

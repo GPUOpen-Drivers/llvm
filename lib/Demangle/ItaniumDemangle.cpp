@@ -13,8 +13,6 @@
 
 #include "llvm/Demangle/Demangle.h"
 
-#include "llvm/Demangle/Compiler.h"
-
 #include <algorithm>
 #include <cassert>
 #include <cctype>
@@ -29,6 +27,76 @@
 #if _MSC_VER < 1900
 #define snprintf _snprintf_s
 #endif
+#endif
+
+// A variety of feature test macros copied from include/llvm/Support/Compiler.h
+#ifndef __has_feature
+#define __has_feature(x) 0
+#endif
+
+#ifndef __has_cpp_attribute
+#define __has_cpp_attribute(x) 0
+#endif
+
+#ifndef __has_attribute
+#define __has_attribute(x) 0
+#endif
+
+#ifndef __has_builtin
+#define __has_builtin(x) 0
+#endif
+
+#ifndef LLVM_GNUC_PREREQ
+#if defined(__GNUC__) && defined(__GNUC_MINOR__) && defined(__GNUC_PATCHLEVEL__)
+#define LLVM_GNUC_PREREQ(maj, min, patch)                                      \
+  ((__GNUC__ << 20) + (__GNUC_MINOR__ << 10) + __GNUC_PATCHLEVEL__ >=          \
+   ((maj) << 20) + ((min) << 10) + (patch))
+#elif defined(__GNUC__) && defined(__GNUC_MINOR__)
+#define LLVM_GNUC_PREREQ(maj, min, patch)                                      \
+  ((__GNUC__ << 20) + (__GNUC_MINOR__ << 10) >= ((maj) << 20) + ((min) << 10))
+#else
+#define LLVM_GNUC_PREREQ(maj, min, patch) 0
+#endif
+#endif
+
+#if __has_attribute(used) || LLVM_GNUC_PREREQ(3, 1, 0)
+#define LLVM_ATTRIBUTE_USED __attribute__((__used__))
+#else
+#define LLVM_ATTRIBUTE_USED
+#endif
+
+#if __has_builtin(__builtin_unreachable) || LLVM_GNUC_PREREQ(4, 5, 0)
+#define LLVM_BUILTIN_UNREACHABLE __builtin_unreachable()
+#elif defined(_MSC_VER)
+#define LLVM_BUILTIN_UNREACHABLE __assume(false)
+#endif
+
+#if __has_attribute(noinline) || LLVM_GNUC_PREREQ(3, 4, 0)
+#define LLVM_ATTRIBUTE_NOINLINE __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define LLVM_ATTRIBUTE_NOINLINE __declspec(noinline)
+#else
+#define LLVM_ATTRIBUTE_NOINLINE
+#endif
+
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
+#define LLVM_DUMP_METHOD LLVM_ATTRIBUTE_NOINLINE LLVM_ATTRIBUTE_USED
+#else
+#define LLVM_DUMP_METHOD LLVM_ATTRIBUTE_NOINLINE
+#endif
+
+#if __cplusplus > 201402L && __has_cpp_attribute(fallthrough)
+#define LLVM_FALLTHROUGH [[fallthrough]]
+#elif __has_cpp_attribute(gnu::fallthrough)
+#define LLVM_FALLTHROUGH [[gnu::fallthrough]]
+#elif !__cplusplus
+// Workaround for llvm.org/PR23435, since clang 3.6 and below emit a spurious
+// error when __has_cpp_attribute is given a scoped attribute in C mode.
+#define LLVM_FALLTHROUGH
+#elif __has_cpp_attribute(clang::fallthrough)
+#define LLVM_FALLTHROUGH [[clang::fallthrough]]
+#else
+#define LLVM_FALLTHROUGH
 #endif
 
 namespace {
@@ -264,7 +332,7 @@ public:
   // Print the "right". This distinction is necessary to represent C++ types
   // that appear on the RHS of their subtype, such as arrays or functions.
   // Since most types don't have such a component, provide a default
-  // implemenation.
+  // implementation.
   virtual void printRight(OutputStream &) const {}
 
   virtual StringView getBaseName() const { return StringView(); }
@@ -740,7 +808,7 @@ public:
   bool hasRHSComponentSlow(OutputStream &) const override { return true; }
   bool hasFunctionSlow(OutputStream &) const override { return true; }
 
-  // Handle C++'s ... quirky decl grammer by using the left & right
+  // Handle C++'s ... quirky decl grammar by using the left & right
   // distinction. Consider:
   //   int (*f(float))(char) {}
   // f is a function that takes a float and returns a pointer to a function
@@ -1049,7 +1117,7 @@ public:
   }
 };
 
-/// A variadic template argument. This node represents an occurance of
+/// A variadic template argument. This node represents an occurrence of
 /// J<something>E in some <template-args>. It isn't itself unexpanded, unless
 /// one of it's Elements is. The parser inserts a ParameterPack into the
 /// TemplateParams table if the <template-args> this pack belongs to apply to an
@@ -1882,7 +1950,7 @@ class BumpPointerAllocator {
   static constexpr size_t AllocSize = 4096;
   static constexpr size_t UsableAllocSize = AllocSize - sizeof(BlockMeta);
 
-  alignas(16) char InitialBuffer[AllocSize];
+  alignas(long double) char InitialBuffer[AllocSize];
   BlockMeta* BlockList = nullptr;
 
   void grow() {
@@ -2045,7 +2113,7 @@ struct Db {
   const char *Last;
 
   // Name stack, this is used by the parser to hold temporary names that were
-  // parsed. The parser colapses multiple names into new nodes to construct
+  // parsed. The parser collapses multiple names into new nodes to construct
   // the AST. Once the parser is finished, names.size() == 1.
   PODSmallVector<Node *, 32> Names;
 
@@ -5262,6 +5330,38 @@ bool ItaniumPartialDemangler::hasFunctionQualifiers() const {
     return false;
   auto *E = static_cast<FunctionEncoding *>(RootNode);
   return E->getCVQuals() != QualNone || E->getRefQual() != FrefQualNone;
+}
+
+bool ItaniumPartialDemangler::isCtorOrDtor() const {
+  Node *N = static_cast<Node *>(RootNode);
+  while (N) {
+    switch (N->getKind()) {
+    default:
+      return false;
+    case Node::KCtorDtorName:
+      return true;
+
+    case Node::KAbiTagAttr:
+      N = static_cast<AbiTagAttr *>(N)->Base;
+      break;
+    case Node::KFunctionEncoding:
+      N = static_cast<FunctionEncoding *>(N)->getName();
+      break;
+    case Node::KLocalName:
+      N = static_cast<LocalName *>(N)->Entity;
+      break;
+    case Node::KNameWithTemplateArgs:
+      N = static_cast<NameWithTemplateArgs *>(N)->Name;
+      break;
+    case Node::KNestedName:
+      N = static_cast<NestedName *>(N)->Name;
+      break;
+    case Node::KStdQualifiedName:
+      N = static_cast<StdQualifiedName *>(N)->Child;
+      break;
+    }
+  }
+  return false;
 }
 
 bool ItaniumPartialDemangler::isFunction() const {

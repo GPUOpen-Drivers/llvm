@@ -20,7 +20,7 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/TargetFolder.h"
-#include "llvm/Analysis/Utils/Local.h"
+#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/Argument.h"
 #include "llvm/IR/BasicBlock.h"
@@ -210,6 +210,23 @@ IntrinsicIDToOverflowCheckFlavor(unsigned ID) {
   case Intrinsic::smul_with_overflow:
     return OCF_SIGNED_MUL;
   }
+}
+
+/// Integer division/remainder require special handling to avoid undefined
+/// behavior. If a constant vector has undef elements, replace those undefs with
+/// '1' because that's always safe to execute.
+static inline Constant *getSafeVectorConstantForIntDivRem(Constant *In) {
+  assert(In->getType()->isVectorTy() && "Not expecting scalars here");
+  assert(In->getType()->getVectorElementType()->isIntegerTy() &&
+         "Not expecting FP opcodes/operands/constants here");
+
+  unsigned NumElts = In->getType()->getVectorNumElements();
+  SmallVector<Constant *, 16> Out(NumElts);
+  for (unsigned i = 0; i != NumElts; ++i) {
+    Constant *C = In->getAggregateElement(i);
+    Out[i] = isa<UndefValue>(C) ? ConstantInt::get(C->getType(), 1) : C;
+  }
+  return ConstantVector::get(Out);
 }
 
 /// The core instruction combiner logic.
@@ -536,8 +553,8 @@ public:
     if (&I == V)
       V = UndefValue::get(I.getType());
 
-    DEBUG(dbgs() << "IC: Replacing " << I << "\n"
-                 << "    with " << *V << '\n');
+    LLVM_DEBUG(dbgs() << "IC: Replacing " << I << "\n"
+                      << "    with " << *V << '\n');
 
     I.replaceAllUsesWith(V);
     return &I;
@@ -559,7 +576,7 @@ public:
   /// value, we can't rely on DCE to delete the instruction. Instead, visit
   /// methods should return the value returned by this function.
   Instruction *eraseInstFromFunction(Instruction &I) {
-    DEBUG(dbgs() << "IC: ERASE " << I << '\n');
+    LLVM_DEBUG(dbgs() << "IC: ERASE " << I << '\n');
     assert(I.use_empty() && "Cannot erase instruction that is used!");
     salvageDebugInfo(I);
 
@@ -706,11 +723,16 @@ private:
   /// demanded bits.
   bool SimplifyDemandedInstructionBits(Instruction &Inst);
 
+  Value *simplifyAMDGCNMemoryIntrinsicDemanded(IntrinsicInst *II,
+                                               APInt DemandedElts,
+                                               int DmaskIdx = -1,
+                                               int TFEIdx = -1);
+
   Value *SimplifyDemandedVectorElts(Value *V, APInt DemandedElts,
                                     APInt &UndefElts, unsigned Depth = 0);
 
-  Value *SimplifyVectorOp(BinaryOperator &Inst);
-
+  /// Canonicalize the position of binops relative to shufflevector.
+  Instruction *foldShuffledBinop(BinaryOperator &Inst);
 
   /// Given a binary operator, cast instruction, or select which has a PHI node
   /// as operand #0, see if we can fold the instruction into the PHI (which is

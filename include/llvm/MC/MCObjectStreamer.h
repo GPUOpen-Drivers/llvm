@@ -48,7 +48,7 @@ class MCObjectStreamer : public MCStreamer {
 
 protected:
   MCObjectStreamer(MCContext &Context, std::unique_ptr<MCAsmBackend> TAB,
-                   raw_pwrite_stream &OS,
+                   std::unique_ptr<MCObjectWriter> OW,
                    std::unique_ptr<MCCodeEmitter> Emitter);
   ~MCObjectStreamer();
 
@@ -73,7 +73,9 @@ public:
 
   /// Get a data fragment to write into, creating a new one if the current
   /// fragment is not a data fragment.
-  MCDataFragment *getOrCreateDataFragment();
+  /// Optionally a \p STI can be passed in so that a new fragment is created
+  /// if the Subtarget differs from the current fragment.
+  MCDataFragment *getOrCreateDataFragment(const MCSubtargetInfo* STI = nullptr);
   MCPaddingFragment *getOrCreatePaddingFragment();
 
 protected:
@@ -84,8 +86,6 @@ protected:
   /// Optionally, it is also possible to provide an offset \p FOffset, which
   /// will be used as a symbol offset within the fragment.
   void flushPendingLabels(MCFragment *F, uint64_t FOffset = 0);
-
-  void addFragmentAtoms();
 
 public:
   void visitUsedSymbol(const MCSymbol &Sym) override;
@@ -158,7 +158,8 @@ public:
   void EmitGPRel32Value(const MCExpr *Value) override;
   void EmitGPRel64Value(const MCExpr *Value) override;
   bool EmitRelocDirective(const MCExpr &Offset, StringRef Name,
-                          const MCExpr *Expr, SMLoc Loc) override;
+                          const MCExpr *Expr, SMLoc Loc,
+                          const MCSubtargetInfo &STI) override;
   using MCStreamer::emitFill;
   void emitFill(const MCExpr &NumBytes, uint64_t FillValue,
                 SMLoc Loc = SMLoc()) override;

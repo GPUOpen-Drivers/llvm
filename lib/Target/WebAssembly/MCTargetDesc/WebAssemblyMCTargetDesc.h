@@ -26,7 +26,7 @@ class MCAsmBackend;
 class MCCodeEmitter;
 class MCContext;
 class MCInstrInfo;
-class MCObjectWriter;
+class MCObjectTargetWriter;
 class MCSubtargetInfo;
 class MVT;
 class Target;
@@ -40,13 +40,11 @@ MCCodeEmitter *createWebAssemblyMCCodeEmitter(const MCInstrInfo &MCII);
 
 MCAsmBackend *createWebAssemblyAsmBackend(const Triple &TT);
 
-std::unique_ptr<MCObjectWriter>
-createWebAssemblyELFObjectWriter(raw_pwrite_stream &OS,
-                                 bool Is64Bit, uint8_t OSABI);
+std::unique_ptr<MCObjectTargetWriter>
+createWebAssemblyELFObjectWriter(bool Is64Bit, uint8_t OSABI);
 
-std::unique_ptr<MCObjectWriter>
-createWebAssemblyWasmObjectWriter(raw_pwrite_stream &OS,
-                                  bool Is64Bit);
+std::unique_ptr<MCObjectTargetWriter>
+createWebAssemblyWasmObjectWriter(bool Is64Bit);
 
 namespace WebAssembly {
 enum OperandType {
@@ -111,38 +109,75 @@ namespace WebAssembly {
 inline unsigned GetDefaultP2Align(unsigned Opcode) {
   switch (Opcode) {
   case WebAssembly::LOAD8_S_I32:
+  case WebAssembly::LOAD8_S_I32_S:
   case WebAssembly::LOAD8_U_I32:
+  case WebAssembly::LOAD8_U_I32_S:
   case WebAssembly::LOAD8_S_I64:
+  case WebAssembly::LOAD8_S_I64_S:
   case WebAssembly::LOAD8_U_I64:
+  case WebAssembly::LOAD8_U_I64_S:
   case WebAssembly::ATOMIC_LOAD8_U_I32:
+  case WebAssembly::ATOMIC_LOAD8_U_I32_S:
   case WebAssembly::ATOMIC_LOAD8_U_I64:
+  case WebAssembly::ATOMIC_LOAD8_U_I64_S:
   case WebAssembly::STORE8_I32:
+  case WebAssembly::STORE8_I32_S:
   case WebAssembly::STORE8_I64:
+  case WebAssembly::STORE8_I64_S:
+  case WebAssembly::ATOMIC_STORE8_I32:
+  case WebAssembly::ATOMIC_STORE8_I64:
     return 0;
   case WebAssembly::LOAD16_S_I32:
+  case WebAssembly::LOAD16_S_I32_S:
   case WebAssembly::LOAD16_U_I32:
+  case WebAssembly::LOAD16_U_I32_S:
   case WebAssembly::LOAD16_S_I64:
+  case WebAssembly::LOAD16_S_I64_S:
   case WebAssembly::LOAD16_U_I64:
+  case WebAssembly::LOAD16_U_I64_S:
   case WebAssembly::ATOMIC_LOAD16_U_I32:
+  case WebAssembly::ATOMIC_LOAD16_U_I32_S:
   case WebAssembly::ATOMIC_LOAD16_U_I64:
+  case WebAssembly::ATOMIC_LOAD16_U_I64_S:
   case WebAssembly::STORE16_I32:
+  case WebAssembly::STORE16_I32_S:
   case WebAssembly::STORE16_I64:
+  case WebAssembly::STORE16_I64_S:
+  case WebAssembly::ATOMIC_STORE16_I32:
+  case WebAssembly::ATOMIC_STORE16_I64:
     return 1;
   case WebAssembly::LOAD_I32:
+  case WebAssembly::LOAD_I32_S:
   case WebAssembly::LOAD_F32:
+  case WebAssembly::LOAD_F32_S:
   case WebAssembly::STORE_I32:
+  case WebAssembly::STORE_I32_S:
   case WebAssembly::STORE_F32:
+  case WebAssembly::STORE_F32_S:
   case WebAssembly::LOAD32_S_I64:
+  case WebAssembly::LOAD32_S_I64_S:
   case WebAssembly::LOAD32_U_I64:
+  case WebAssembly::LOAD32_U_I64_S:
   case WebAssembly::STORE32_I64:
+  case WebAssembly::STORE32_I64_S:
   case WebAssembly::ATOMIC_LOAD_I32:
+  case WebAssembly::ATOMIC_LOAD_I32_S:
   case WebAssembly::ATOMIC_LOAD32_U_I64:
+  case WebAssembly::ATOMIC_LOAD32_U_I64_S:
+  case WebAssembly::ATOMIC_STORE_I32:
+  case WebAssembly::ATOMIC_STORE32_I64:
     return 2;
   case WebAssembly::LOAD_I64:
+  case WebAssembly::LOAD_I64_S:
   case WebAssembly::LOAD_F64:
+  case WebAssembly::LOAD_F64_S:
   case WebAssembly::STORE_I64:
+  case WebAssembly::STORE_I64_S:
   case WebAssembly::STORE_F64:
+  case WebAssembly::STORE_F64_S:
   case WebAssembly::ATOMIC_LOAD_I64:
+  case WebAssembly::ATOMIC_LOAD_I64_S:
+  case WebAssembly::ATOMIC_STORE_I64:
     return 3;
   default:
     llvm_unreachable("Only loads and stores have p2align values");

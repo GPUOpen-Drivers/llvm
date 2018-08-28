@@ -34,7 +34,6 @@ namespace llvm {
 class AMDGPUTargetMachine : public LLVMTargetMachine {
 protected:
   std::unique_ptr<TargetLoweringObjectFile> TLOF;
-  AMDGPUIntrinsicInfo IntrinsicInfo;
   AMDGPUAS AS;
 
   StringRef getGPUName(const Function &F) const;
@@ -49,13 +48,8 @@ public:
                       CodeGenOpt::Level OL);
   ~AMDGPUTargetMachine() override;
 
-  const AMDGPUSubtarget *getSubtargetImpl() const;
-  const AMDGPUSubtarget *getSubtargetImpl(const Function &) const override = 0;
-
-  const AMDGPUIntrinsicInfo *getIntrinsicInfo() const override {
-    return &IntrinsicInfo;
-  }
-  TargetTransformInfo getTargetTransformInfo(const Function &F) override;
+  const TargetSubtargetInfo *getSubtargetImpl() const;
+  const TargetSubtargetInfo *getSubtargetImpl(const Function &) const override = 0;
 
   TargetLoweringObjectFile *getObjFileLowering() const override {
     return TLOF.get();
@@ -91,6 +85,8 @@ public:
 
   const R600Subtarget *getSubtargetImpl(const Function &) const override;
 
+  TargetTransformInfo getTargetTransformInfo(const Function &F) override;
+
   bool isMachineVerifierClean() const override {
     return false;
   }
@@ -102,6 +98,7 @@ public:
 
 class GCNTargetMachine final : public AMDGPUTargetMachine {
 private:
+  AMDGPUIntrinsicInfo IntrinsicInfo;
   mutable StringMap<std::unique_ptr<SISubtarget>> SubtargetMap;
 
 public:
@@ -113,6 +110,12 @@ public:
   TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
 
   const SISubtarget *getSubtargetImpl(const Function &) const override;
+
+  TargetTransformInfo getTargetTransformInfo(const Function &F) override;
+
+  const AMDGPUIntrinsicInfo *getIntrinsicInfo() const override {
+    return &IntrinsicInfo;
+  }
 
   bool useIPRA() const override {
     return true;

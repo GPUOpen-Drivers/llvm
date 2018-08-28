@@ -17,6 +17,7 @@
 #include "AMDGPU.h"
 #include "AMDGPUSubtarget.h"
 #include "SIInstrInfo.h"
+#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
 #include "Utils/AMDGPULaneDominator.h"
 #include "llvm/CodeGen/LiveIntervals.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
@@ -82,6 +83,7 @@ bool SIAddIMGInit::runOnMachineFunction(MachineFunction &MF) {
       if (TII->isMIMG(Opcode) && !TII->get(Opcode).mayStore()) {
         MachineOperand *tfe = TII->getNamedOperand(MI, AMDGPU::OpName::tfe);
         MachineOperand *lwe = TII->getNamedOperand(MI, AMDGPU::OpName::lwe);
+        MachineOperand *d16 = TII->getNamedOperand(MI, AMDGPU::OpName::d16);
 
         // Abandon attempts for instructions that don't have tfe or lwe fields
         // Shouldn't be any at this point, but this will allow for future
@@ -91,6 +93,8 @@ bool SIAddIMGInit::runOnMachineFunction(MachineFunction &MF) {
 
         unsigned tfeVal = tfe->getImm();
         unsigned lweVal = lwe->getImm();
+        unsigned d16Val = d16 ? d16->getImm() : 0;
+
         if (tfeVal || lweVal) {
           // At least one of TFE or LWE are non-zero
           // We have to insert a suitable initialization of the result value and
@@ -116,8 +120,8 @@ bool SIAddIMGInit::runOnMachineFunction(MachineFunction &MF) {
           // When D16 then we want next whole VGPR after write data.
           bool Packed = !ST.hasUnpackedD16VMem();
           unsigned initIdx =
-            TII->isD16(Opcode) && Packed ? ((activeLanes + 1) >> 1) + 1
-                                         : activeLanes + 1;
+            d16Val && Packed ? ((activeLanes + 1) >> 1) + 1
+                             : activeLanes + 1;
 
           // Abandon attempt if the dst size isn't large enough
           // - this is in fact an error but this is picked up elsewhere and
@@ -129,8 +133,6 @@ bool SIAddIMGInit::runOnMachineFunction(MachineFunction &MF) {
           // Create a register for the intialization value.
           unsigned prevDst =
             MRI.createVirtualRegister(TII->getOpRegClass(MI, dstIdx));
-          BuildMI(MBB, MI, DL, TII->get(AMDGPU::IMPLICIT_DEF), prevDst);
-
           unsigned newDst = 0; // Final initialized value will be in here
 
           // If PRTStrictNull feature is enabled (the default) then initialize
@@ -139,20 +141,29 @@ bool SIAddIMGInit::runOnMachineFunction(MachineFunction &MF) {
           unsigned sizeLeft = ST.usePRTStrictNull() ? initIdx : 1;
           unsigned currIdx = ST.usePRTStrictNull() ? 1 : initIdx;
 
-          for ( ; sizeLeft ; sizeLeft--, currIdx++ ) {
-            newDst = MRI.createVirtualRegister(TII->getOpRegClass(MI, dstIdx));
-            // Initialize dword
-            unsigned subReg =
-                MRI.createVirtualRegister(&AMDGPU::VGPR_32RegClass);
-            BuildMI(MBB, MI, DL, TII->get(AMDGPU::V_MOV_B32_e32), subReg)
-              .addImm(0);
-            // Insert into the super-reg
-            BuildMI(MBB, I, DL, TII->get(TargetOpcode::INSERT_SUBREG), newDst)
-              .addReg(prevDst)
-              .addReg(subReg)
-              .addImm(currIdx);
+          if (dstSize == 1) {
+            // In this case we can just initialize the result directly
+            BuildMI(MBB, MI, DL, TII->get(AMDGPU::V_MOV_B32_e32), prevDst)
+                .addImm(0);
+            newDst = prevDst;
+          } else {
+            BuildMI(MBB, MI, DL, TII->get(AMDGPU::IMPLICIT_DEF), prevDst);
+            for (; sizeLeft; sizeLeft--, currIdx++) {
+              newDst =
+                  MRI.createVirtualRegister(TII->getOpRegClass(MI, dstIdx));
+              // Initialize dword
+              unsigned subReg =
+                  MRI.createVirtualRegister(&AMDGPU::VGPR_32RegClass);
+              BuildMI(MBB, MI, DL, TII->get(AMDGPU::V_MOV_B32_e32), subReg)
+                  .addImm(0);
+              // Insert into the super-reg
+              BuildMI(MBB, I, DL, TII->get(TargetOpcode::INSERT_SUBREG), newDst)
+                  .addReg(prevDst)
+                  .addReg(subReg)
+                  .addImm(currIdx);
 
-            prevDst = newDst;
+              prevDst = newDst;
+            }
           }
 
           // Add as an implicit operand

@@ -1,3 +1,4 @@
+; RUN: llc -march=amdgcn -mcpu=verde -verify-machineinstrs < %s | FileCheck -check-prefixes=GCN %s
 ; RUN: llc -march=amdgcn -mcpu=gfx900 -verify-machineinstrs < %s | FileCheck -check-prefixes=GCN %s
 
 ; GCN-LABEL: {{^}}gather4_2d:
@@ -6,15 +7,6 @@ define amdgpu_ps <4 x float> @gather4_2d(<8 x i32> inreg %rsrc, <4 x i32> inreg 
 main_body:
   %v = call <4 x float> @llvm.amdgcn.image.gather4.2d.v4f32.f32(i32 1, float %s, float %t, <8 x i32> %rsrc, <4 x i32> %samp, i1 0, i32 0, i32 0)
   ret <4 x float> %v
-}
-
-; GCN-LABEL: {{^}}gather4_2d_tfe:
-; GCN: v_mov_b32_e32 v{{[0-9]+}}, 0
-; GCN: image_gather4 v[{{[0-9]+:[0-9]+}}], v[{{[0-9]+:[0-9]+}}], s[0:7], s[8:11] dmask:0x1 tfe{{$}}
-define amdgpu_ps <8 x float> @gather4_2d_tfe(<8 x i32> inreg %rsrc, <4 x i32> inreg %samp, float %s, float %t) {
-main_body:
-  %v = call <8 x float> @llvm.amdgcn.image.gather4.2d.v8f32.f32(i32 1, float %s, float %t, <8 x i32> %rsrc, <4 x i32> %samp, i1 0, i32 1, i32 0)
-  ret <8 x float> %v
 }
 
 ; GCN-LABEL: {{^}}gather4_cube:
@@ -146,7 +138,6 @@ main_body:
 }
 
 declare <4 x float> @llvm.amdgcn.image.gather4.2d.v4f32.f32(i32, float, float, <8 x i32>, <4 x i32>, i1, i32, i32) #1
-declare <8 x float> @llvm.amdgcn.image.gather4.2d.v8f32.f32(i32, float, float, <8 x i32>, <4 x i32>, i1, i32, i32) #1
 declare <4 x float> @llvm.amdgcn.image.gather4.cube.v4f32.f32(i32, float, float, float, <8 x i32>, <4 x i32>, i1, i32, i32) #1
 declare <4 x float> @llvm.amdgcn.image.gather4.2darray.v4f32.f32(i32, float, float, float, <8 x i32>, <4 x i32>, i1, i32, i32) #1
 

@@ -110,12 +110,6 @@ static cl::opt<bool> EnableAMDGPUAliasAnalysis("enable-amdgpu-aa", cl::Hidden,
   cl::desc("Enable AMDGPU Alias Analysis"),
   cl::init(true));
 
-// Option to enable new waitcnt insertion pass.
-static cl::opt<bool> EnableSIInsertWaitcntsPass(
-  "enable-si-insert-waitcnts",
-  cl::desc("Use new waitcnt insertion pass"),
-  cl::init(true));
-
 // Option to run late CFG structurizer
 static cl::opt<bool, true> LateCFGStructurize(
   "amdgpu-late-structurize",
@@ -132,7 +126,20 @@ static cl::opt<bool> EnableAMDGPUFunctionCalls(
 // Enable lib calls simplifications
 static cl::opt<bool> EnableLibCallSimplify(
   "amdgpu-simplify-libcall",
-  cl::desc("Enable mdgpu library simplifications"),
+  cl::desc("Enable amdgpu library simplifications"),
+  cl::init(true),
+  cl::Hidden);
+
+static cl::opt<bool> EnableLowerKernelArguments(
+  "amdgpu-ir-lower-kernel-arguments",
+  cl::desc("Lower kernel argument loads in IR pass"),
+  cl::init(true),
+  cl::Hidden);
+
+// Enable Mode register optimization
+static cl::opt<bool> EnableSIModeRegisterPass(
+  "amdgpu-mode-register",
+  cl::desc("Enable mode register pass"),
   cl::init(true),
   cl::Hidden);
 
@@ -150,10 +157,10 @@ extern "C" void LLVMInitializeAMDGPUTarget() {
   initializeGlobalISel(*PR);
   initializeAMDGPUDAGToDAGISelPass(*PR);
   initializeSILowerI1CopiesPass(*PR);
-  initializeSIAddIMGInitPass(*PR);
   initializeSIFixSGPRCopiesPass(*PR);
   initializeSIFixVGPRCopiesPass(*PR);
   initializeSIFoldOperandsPass(*PR);
+  initializeSIInsertWaterfallPass(*PR);
   initializeSIPeepholeSDWAPass(*PR);
   initializeSIShrinkInstructionsPass(*PR);
   initializeSIOptimizeExecMaskingPreRAPass(*PR);
@@ -162,6 +169,8 @@ extern "C" void LLVMInitializeAMDGPUTarget() {
   initializeAMDGPUAnnotateKernelFeaturesPass(*PR);
   initializeAMDGPUAnnotateUniformValuesPass(*PR);
   initializeAMDGPUArgumentUsageInfoPass(*PR);
+  initializeAMDGPULowerKernelArgumentsPass(*PR);
+  initializeAMDGPULowerKernelAttributesPass(*PR);
   initializeAMDGPULowerIntrinsicsPass(*PR);
   initializeAMDGPUOpenCLEnqueuedBlockLoweringPass(*PR);
   initializeAMDGPUPromoteAllocaPass(*PR);
@@ -170,6 +179,7 @@ extern "C" void LLVMInitializeAMDGPUTarget() {
   initializeAMDGPUUnifyMetadataPass(*PR);
   initializeSIAnnotateControlFlowPass(*PR);
   initializeSIInsertWaitcntsPass(*PR);
+  initializeSIModeRegisterPass(*PR);
   initializeSIWholeQuadModePass(*PR);
   initializeSILowerControlFlowPass(*PR);
   initializeSIInsertSkipsPass(*PR);
@@ -178,6 +188,7 @@ extern "C" void LLVMInitializeAMDGPUTarget() {
   initializeSIDebuggerInsertNopsPass(*PR);
   initializeSIOptimizeExecMaskingPass(*PR);
   initializeSIFixWWMLivenessPass(*PR);
+  initializeSIFormMemoryClausesPass(*PR);
   initializeAMDGPUUnifyDivergentExitNodesPass(*PR);
   initializeAMDGPUAAWrapperPassPass(*PR);
   initializeAMDGPUUseNativeCallsPass(*PR);
@@ -405,6 +416,10 @@ void AMDGPUTargetMachine::adjustPassManager(PassManagerBuilder &Builder) {
       // Add infer address spaces pass to the opt pipeline after inlining
       // but before SROA to increase SROA opportunities.
       PM.add(createInferAddressSpacesPass());
+
+      // This should run after inlining to have any chance of doing anything,
+      // and before other cleanup optimizations.
+      PM.add(createAMDGPULowerKernelAttributesPass());
   });
 }
 
@@ -442,6 +457,11 @@ const R600Subtarget *R600TargetMachine::getSubtargetImpl(
   return I.get();
 }
 
+TargetTransformInfo
+R600TargetMachine::getTargetTransformInfo(const Function &F) {
+  return TargetTransformInfo(R600TTIImpl(this, F));
+}
+
 //===----------------------------------------------------------------------===//
 // GCN Target Machine (SI+)
 //===----------------------------------------------------------------------===//
@@ -473,6 +493,11 @@ const SISubtarget *GCNTargetMachine::getSubtargetImpl(const Function &F) const {
   I->setScalarizeGlobalBehavior(ScalarizeGlobal);
 
   return I.get();
+}
+
+TargetTransformInfo
+GCNTargetMachine::getTargetTransformInfo(const Function &F) {
+  return TargetTransformInfo(GCNTTIImpl(this, F));
 }
 
 //===----------------------------------------------------------------------===//
@@ -564,11 +589,6 @@ public:
 
 } // end anonymous namespace
 
-TargetTransformInfo
-AMDGPUTargetMachine::getTargetTransformInfo(const Function &F) {
-  return TargetTransformInfo(AMDGPUTTIImpl(this, F));
-}
-
 void AMDGPUPassConfig::addEarlyCSEOrGVNPass() {
   if (getOptLevel() == CodeGenOpt::Aggressive)
     addPass(createGVNPass());
@@ -577,6 +597,7 @@ void AMDGPUPassConfig::addEarlyCSEOrGVNPass() {
 }
 
 void AMDGPUPassConfig::addStraightLineScalarOptimizationPasses() {
+  addPass(createLICMPass());
   addPass(createSeparateConstOffsetFromGEPPass());
   addPass(createSpeculativeExecutionPass());
   // ReassociateGEPs exposes more opportunites for SLSR. See
@@ -622,7 +643,8 @@ void AMDGPUPassConfig::addIRPasses() {
   }
 
   // Handle uses of OpenCL image2d_t, image3d_t and sampler_t arguments.
-  addPass(createAMDGPUOpenCLImageTypeLoweringPass());
+  if (TM.getTargetTriple().getArch() == Triple::r600)
+    addPass(createR600OpenCLImageTypeLoweringPass());
 
   // Replace OpenCL enqueued block function pointers with global variables.
   addPass(createAMDGPUOpenCLEnqueuedBlockLoweringPass());
@@ -665,6 +687,10 @@ void AMDGPUPassConfig::addIRPasses() {
 }
 
 void AMDGPUPassConfig::addCodeGenPrepare() {
+  if (TM->getTargetTriple().getArch() == Triple::amdgcn &&
+      EnableLowerKernelArguments)
+    addPass(createAMDGPULowerKernelArgumentsPass());
+
   TargetPassConfig::addCodeGenPrepare();
 
   if (EnableLoadStoreVectorizer)
@@ -824,6 +850,7 @@ void GCNPassConfig::addPreRegAlloc() {
   if (LateCFGStructurize) {
     addPass(createAMDGPUMachineCFGStructurizerPass());
   }
+  addPass(createSIInsertWaterfallPass());
   addPass(createSIWholeQuadModePass());
 }
 
@@ -845,6 +872,8 @@ void GCNPassConfig::addFastRegAlloc(FunctionPass *RegAllocPass) {
 
 void GCNPassConfig::addOptimizedRegAlloc(FunctionPass *RegAllocPass) {
   insertPass(&MachineSchedulerID, &SIOptimizeExecMaskingPreRAID);
+
+  insertPass(&SIOptimizeExecMaskingPreRAID, &SIFormMemoryClausesID);
 
   // This must be run immediately after phi elimination and before
   // TwoAddressInstructions, otherwise the processing of the tied operand of
@@ -868,6 +897,7 @@ void GCNPassConfig::addPreSched2() {
 }
 
 void GCNPassConfig::addPreEmitPass() {
+  addPass(createSIModeRegisterPass());
   // The hazard recognizer that runs as part of the post-ra scheduler does not
   // guarantee to be able handle all hazards correctly. This is because if there
   // are multiple scheduling regions in a basic block, the regions are scheduled

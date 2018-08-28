@@ -527,7 +527,7 @@ static Constant *foldOrCommuteConstant(Instruction::BinaryOps Opcode,
 
 /// Given operands for an Add, see if we can fold the result.
 /// If not, this returns null.
-static Value *SimplifyAddInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
+static Value *SimplifyAddInst(Value *Op0, Value *Op1, bool IsNSW, bool IsNUW,
                               const SimplifyQuery &Q, unsigned MaxRecurse) {
   if (Constant *C = foldOrCommuteConstant(Instruction::Add, Op0, Op1, Q))
     return C;
@@ -557,9 +557,13 @@ static Value *SimplifyAddInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
   // add nsw/nuw (xor Y, signmask), signmask --> Y
   // The no-wrapping add guarantees that the top bit will be set by the add.
   // Therefore, the xor must be clearing the already set sign bit of Y.
-  if ((isNSW || isNUW) && match(Op1, m_SignMask()) &&
+  if ((IsNSW || IsNUW) && match(Op1, m_SignMask()) &&
       match(Op0, m_Xor(m_Value(Y), m_SignMask())))
     return Y;
+
+  // add nuw %x, -1  ->  -1, because %x can only be 0.
+  if (IsNUW && match(Op1, m_AllOnes()))
+    return Op1; // Which is -1.
 
   /// i1 add -> xor.
   if (MaxRecurse && Op0->getType()->isIntOrIntVectorTy(1))
@@ -583,9 +587,9 @@ static Value *SimplifyAddInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
   return nullptr;
 }
 
-Value *llvm::SimplifyAddInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
+Value *llvm::SimplifyAddInst(Value *Op0, Value *Op1, bool IsNSW, bool IsNUW,
                              const SimplifyQuery &Query) {
-  return ::SimplifyAddInst(Op0, Op1, isNSW, isNUW, Query, RecursionLimit);
+  return ::SimplifyAddInst(Op0, Op1, IsNSW, IsNUW, Query, RecursionLimit);
 }
 
 /// Compute the base pointer and cumulative constant offsets for V.
@@ -898,7 +902,10 @@ static Value *simplifyDivRem(Value *Op0, Value *Op1, bool IsDiv) {
   // X % 1 -> 0
   // If this is a boolean op (single-bit element type), we can't have
   // division-by-zero or remainder-by-zero, so assume the divisor is 1.
-  if (match(Op1, m_One()) || Ty->isIntOrIntVectorTy(1))
+  // Similarly, if we're zero-extending a boolean divisor, then assume it's a 1.
+  Value *X;
+  if (match(Op1, m_One()) || Ty->isIntOrIntVectorTy(1) ||
+      (match(Op1, m_ZExt(m_Value(X))) && X->getType()->isIntOrIntVectorTy(1)))
     return IsDiv ? Op0 : Constant::getNullValue(Ty);
 
   return nullptr;
@@ -1092,6 +1099,12 @@ Value *llvm::SimplifyUDivInst(Value *Op0, Value *Op1, const SimplifyQuery &Q) {
 /// If not, this returns null.
 static Value *SimplifySRemInst(Value *Op0, Value *Op1, const SimplifyQuery &Q,
                                unsigned MaxRecurse) {
+  // If the divisor is 0, the result is undefined, so assume the divisor is -1.
+  // srem Op0, (sext i1 X) --> srem Op0, -1 --> 0
+  Value *X;
+  if (match(Op1, m_SExt(m_Value(X))) && X->getType()->isIntOrIntVectorTy(1))
+    return ConstantInt::getNullValue(Op0->getType());
+
   return simplifyRem(Instruction::SRem, Op0, Op1, Q, MaxRecurse);
 }
 
@@ -1149,7 +1162,11 @@ static Value *SimplifyShift(Instruction::BinaryOps Opcode, Value *Op0,
     return Constant::getNullValue(Op0->getType());
 
   // X shift by 0 -> X
-  if (match(Op1, m_Zero()))
+  // Shift-by-sign-extended bool must be shift-by-0 because shift-by-all-ones
+  // would be poison.
+  Value *X;
+  if (match(Op1, m_Zero()) ||
+      (match(Op1, m_SExt(m_Value(X))) && X->getType()->isIntOrIntVectorTy(1)))
     return Op0;
 
   // Fold undefined shifts.
@@ -1226,6 +1243,13 @@ static Value *SimplifyShlInst(Value *Op0, Value *Op1, bool isNSW, bool isNUW,
   Value *X;
   if (match(Op0, m_Exact(m_Shr(m_Value(X), m_Specific(Op1)))))
     return X;
+
+  // shl nuw i8 C, %x  ->  C  iff C has sign bit set.
+  if (isNUW && match(Op0, m_Negative()))
+    return Op0;
+  // NOTE: could use computeKnownBits() / LazyValueInfo,
+  // but the cost-benefit analysis suggests it isn't worth it.
+
   return nullptr;
 }
 
@@ -1302,7 +1326,7 @@ static Value *simplifyUnsignedRangeCheck(ICmpInst *ZeroICmp,
       ICmpInst::isUnsigned(UnsignedPred))
     ;
   else if (match(UnsignedICmp,
-                 m_ICmp(UnsignedPred, m_Value(Y), m_Specific(X))) &&
+                 m_ICmp(UnsignedPred, m_Specific(Y), m_Value(X))) &&
            ICmpInst::isUnsigned(UnsignedPred))
     UnsignedPred = ICmpInst::getSwappedPredicate(UnsignedPred);
   else

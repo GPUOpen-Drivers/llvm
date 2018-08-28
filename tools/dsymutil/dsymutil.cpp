@@ -13,11 +13,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "dsymutil.h"
+#include "BinaryHolder.h"
 #include "CFBundle.h"
 #include "DebugMap.h"
+#include "LinkUtils.h"
 #include "MachOUtils.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/DebugInfo/DIContext.h"
@@ -193,16 +196,24 @@ static bool createPlistFile(llvm::StringRef Bin, llvm::StringRef BundleRoot) {
      << "\t\t<key>CFBundleSignature</key>\n"
      << "\t\t<string>\?\?\?\?</string>\n";
 
-  if (!BI.OmitShortVersion())
-    PL << "\t\t<key>CFBundleShortVersionString</key>\n"
-       << "\t\t<string>" << BI.ShortVersionStr << "</string>\n";
+  if (!BI.OmitShortVersion()) {
+    PL << "\t\t<key>CFBundleShortVersionString</key>\n";
+    PL << "\t\t<string>";
+    printHTMLEscaped(BI.ShortVersionStr, PL);
+    PL << "</string>\n";
+  }
 
-  PL << "\t\t<key>CFBundleVersion</key>\n"
-     << "\t\t<string>" << BI.VersionStr << "</string>\n";
+  PL << "\t\t<key>CFBundleVersion</key>\n";
+  PL << "\t\t<string>";
+  printHTMLEscaped(BI.VersionStr, PL);
+  PL << "</string>\n";
 
-  if (!Toolchain.empty())
-    PL << "\t\t<key>Toolchain</key>\n"
-       << "\t\t<string>" << Toolchain << "</string>\n";
+  if (!Toolchain.empty()) {
+    PL << "\t\t<key>Toolchain</key>\n";
+    PL << "\t\t<string>";
+    printHTMLEscaped(Toolchain, PL);
+    PL << "</string>\n";
+  }
 
   PL << "\t</dict>\n"
      << "</plist>\n";
@@ -393,7 +404,7 @@ int main(int argc, char **argv) {
   std::string SDKPath = llvm::sys::fs::getMainExecutable(argv[0], P);
   SDKPath = llvm::sys::path::parent_path(SDKPath);
 
-  HideUnrelatedOptions(DsymCategory);
+  HideUnrelatedOptions({&DsymCategory, &ColorCategory});
   llvm::cl::ParseCommandLineOptions(
       argc, argv,
       "manipulate archived DWARF debug symbol files.\n\n"
@@ -484,6 +495,9 @@ int main(int argc, char **argv) {
       return 1;
     }
 
+    // Shared a single binary holder for all the link steps.
+    BinaryHolder BinHolder;
+
     NumThreads =
         std::min<unsigned>(OptionsOrErr->Threads, DebugMapPtrsOrErr->size());
     llvm::ThreadPool Threads(NumThreads);
@@ -536,7 +550,7 @@ int main(int argc, char **argv) {
 
       auto LinkLambda = [&,
                          OutputFile](std::shared_ptr<raw_fd_ostream> Stream) {
-        AllOK.fetch_and(linkDwarf(*Stream, *Map, *OptionsOrErr));
+        AllOK.fetch_and(linkDwarf(*Stream, BinHolder, *Map, *OptionsOrErr));
         Stream->flush();
         if (Verify && !NoOutput)
           AllOK.fetch_and(verify(OutputFile, Map->getTriple().getArchName()));

@@ -7,7 +7,6 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "AMDGPUFixupKinds.h"
 #include "AMDGPUMCTargetDesc.h"
 #include "llvm/BinaryFormat/ELF.h"
 #include "llvm/MC/MCELFObjectWriter.h"
@@ -67,6 +66,8 @@ unsigned AMDGPUELFObjectWriter::getRelocType(MCContext &Ctx,
     return ELF::R_AMDGPU_REL32_LO;
   case MCSymbolRefExpr::VK_AMDGPU_REL32_HI:
     return ELF::R_AMDGPU_REL32_HI;
+  case MCSymbolRefExpr::VK_AMDGPU_REL64:
+    return ELF::R_AMDGPU_REL64;
   }
 
   switch (Fixup.getKind()) {
@@ -80,21 +81,12 @@ unsigned AMDGPUELFObjectWriter::getRelocType(MCContext &Ctx,
     return ELF::R_AMDGPU_ABS64;
   }
 
-  switch (AMDGPU::Fixups(Fixup.getKind())) {
-    case AMDGPU::fixup_srd_address:
-    return ELF::R_AMDGPU_SRDADDRESS;
-  default:
-    break;
-  }
-
   llvm_unreachable("unhandled relocation type");
 }
 
-std::unique_ptr<MCObjectWriter>
+std::unique_ptr<MCObjectTargetWriter>
 llvm::createAMDGPUELFObjectWriter(bool Is64Bit, uint8_t OSABI,
-                                  bool HasRelocationAddend,
-                                  raw_pwrite_stream &OS) {
-  auto MOTW = llvm::make_unique<AMDGPUELFObjectWriter>(Is64Bit, OSABI,
-                                                       HasRelocationAddend);
-  return createELFObjectWriter(std::move(MOTW), OS, true);
+                                  bool HasRelocationAddend) {
+  return llvm::make_unique<AMDGPUELFObjectWriter>(Is64Bit, OSABI,
+                                                  HasRelocationAddend);
 }

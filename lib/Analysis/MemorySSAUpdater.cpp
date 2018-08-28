@@ -45,19 +45,25 @@ MemoryAccess *MemorySSAUpdater::getPreviousDefRecursive(
   auto Cached = CachedPreviousDef.find(BB);
   if (Cached != CachedPreviousDef.end()) {
     return Cached->second;
-  } else if (BasicBlock *Pred = BB->getSinglePredecessor()) {
+  }
+
+  if (BasicBlock *Pred = BB->getSinglePredecessor()) {
     // Single predecessor case, just recurse, we can only have one definition.
     MemoryAccess *Result = getPreviousDefFromEnd(Pred, CachedPreviousDef);
     CachedPreviousDef.insert({BB, Result});
     return Result;
-  } else if (VisitedBlocks.count(BB)) {
+  }
+
+  if (VisitedBlocks.count(BB)) {
     // We hit our node again, meaning we had a cycle, we must insert a phi
     // node to break it so we have an operand. The only case this will
     // insert useless phis is if we have irreducible control flow.
     MemoryAccess *Result = MSSA->createMemoryPhi(BB);
     CachedPreviousDef.insert({BB, Result});
     return Result;
-  } else if (VisitedBlocks.insert(BB).second) {
+  }
+
+  if (VisitedBlocks.insert(BB).second) {
     // Mark us visited so we can detect a cycle
     SmallVector<MemoryAccess *, 8> PhiOps;
 
@@ -484,6 +490,39 @@ void MemorySSAUpdater::removeMemoryAccess(MemoryAccess *MA) {
   // are doing things here
   MSSA->removeFromLookups(MA);
   MSSA->removeFromLists(MA);
+}
+
+void MemorySSAUpdater::removeBlocks(
+    const SmallPtrSetImpl<BasicBlock *> &DeadBlocks) {
+  // First delete all uses of BB in MemoryPhis.
+  for (BasicBlock *BB : DeadBlocks) {
+    TerminatorInst *TI = BB->getTerminator();
+    assert(TI && "Basic block expected to have a terminator instruction");
+    for (BasicBlock *Succ : TI->successors())
+      if (!DeadBlocks.count(Succ))
+        if (MemoryPhi *MP = MSSA->getMemoryAccess(Succ)) {
+          MP->unorderedDeleteIncomingBlock(BB);
+          if (MP->getNumIncomingValues() == 1)
+            removeMemoryAccess(MP);
+        }
+    // Drop all references of all accesses in BB
+    if (MemorySSA::AccessList *Acc = MSSA->getWritableBlockAccesses(BB))
+      for (MemoryAccess &MA : *Acc)
+        MA.dropAllReferences();
+  }
+
+  // Next, delete all memory accesses in each block
+  for (BasicBlock *BB : DeadBlocks) {
+    MemorySSA::AccessList *Acc = MSSA->getWritableBlockAccesses(BB);
+    if (!Acc)
+      continue;
+    for (auto AB = Acc->begin(), AE = Acc->end(); AB != AE;) {
+      MemoryAccess *MA = &*AB;
+      ++AB;
+      MSSA->removeFromLookups(MA);
+      MSSA->removeFromLists(MA);
+    }
+  }
 }
 
 MemoryAccess *MemorySSAUpdater::createMemoryAccessInBB(

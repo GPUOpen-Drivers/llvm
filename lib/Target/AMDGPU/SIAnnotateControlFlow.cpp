@@ -18,7 +18,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/DivergenceAnalysis.h"
 #include "llvm/Analysis/LoopInfo.h"
-#include "llvm/Analysis/Utils/Local.h"
+#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constant.h"
@@ -201,7 +201,7 @@ bool SIAnnotateControlFlow::isElse(PHINode *Phi) {
 // Erase "Phi" if it is not used any more
 void SIAnnotateControlFlow::eraseIfUnused(PHINode *Phi) {
   if (RecursivelyDeleteDeadPHINode(Phi)) {
-    DEBUG(dbgs() << "Erased unused condition phi\n");
+    LLVM_DEBUG(dbgs() << "Erased unused condition phi\n");
   }
 }
 

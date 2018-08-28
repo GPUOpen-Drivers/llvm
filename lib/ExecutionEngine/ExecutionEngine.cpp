@@ -214,7 +214,7 @@ void ExecutionEngine::addGlobalMapping(StringRef Name, uint64_t Addr) {
 
   assert(!Name.empty() && "Empty GlobalMapping symbol name!");
 
-  DEBUG(dbgs() << "JIT: Map \'" << Name  << "\' to [" << Addr << "]\n";);
+  LLVM_DEBUG(dbgs() << "JIT: Map \'" << Name << "\' to [" << Addr << "]\n";);
   uint64_t &CurVal = EEState.getGlobalAddressMap()[Name];
   assert((!CurVal || !Addr) && "GlobalMapping already established!");
   CurVal = Addr;
@@ -343,13 +343,14 @@ void *ArgvArray::reset(LLVMContext &C, ExecutionEngine *EE,
   unsigned PtrSize = EE->getDataLayout().getPointerSize();
   Array = make_unique<char[]>((InputArgv.size()+1)*PtrSize);
 
-  DEBUG(dbgs() << "JIT: ARGV = " << (void*)Array.get() << "\n");
+  LLVM_DEBUG(dbgs() << "JIT: ARGV = " << (void *)Array.get() << "\n");
   Type *SBytePtr = Type::getInt8PtrTy(C);
 
   for (unsigned i = 0; i != InputArgv.size(); ++i) {
     unsigned Size = InputArgv[i].size()+1;
     auto Dest = make_unique<char[]>(Size);
-    DEBUG(dbgs() << "JIT: ARGV[" << i << "] = " << (void*)Dest.get() << "\n");
+    LLVM_DEBUG(dbgs() << "JIT: ARGV[" << i << "] = " << (void *)Dest.get()
+                      << "\n");
 
     std::copy(InputArgv[i].begin(), InputArgv[i].end(), Dest.get());
     Dest[Size-1] = 0;
@@ -902,6 +903,9 @@ GenericValue ExecutionEngine::getConstantValue(const Constant *C) {
     Result.IntVal = cast<ConstantInt>(C)->getValue();
     break;
   case Type::PointerTyID:
+    while (auto *A = dyn_cast<GlobalAlias>(C)) {
+      C = A->getAliasee();
+    }
     if (isa<ConstantPointerNull>(C))
       Result.PointerVal = nullptr;
     else if (const Function *F = dyn_cast<Function>(C))
@@ -1180,8 +1184,8 @@ void ExecutionEngine::LoadValueFromMemory(GenericValue &Result,
 }
 
 void ExecutionEngine::InitializeMemory(const Constant *Init, void *Addr) {
-  DEBUG(dbgs() << "JIT: Initializing " << Addr << " ");
-  DEBUG(Init->dump());
+  LLVM_DEBUG(dbgs() << "JIT: Initializing " << Addr << " ");
+  LLVM_DEBUG(Init->dump());
   if (isa<UndefValue>(Init))
     return;
 
@@ -1228,7 +1232,7 @@ void ExecutionEngine::InitializeMemory(const Constant *Init, void *Addr) {
     return;
   }
 
-  DEBUG(dbgs() << "Bad Type: " << *Init->getType() << "\n");
+  LLVM_DEBUG(dbgs() << "Bad Type: " << *Init->getType() << "\n");
   llvm_unreachable("Unknown constant type to initialize memory with!");
 }
 

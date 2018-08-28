@@ -37,6 +37,7 @@
 #include "llvm/Analysis/InlineCost.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/OptimizationRemarkEmitter.h"
+#include "llvm/Analysis/PostDominators.h"
 #include "llvm/Analysis/ProfileSummaryInfo.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/BasicBlock.h"
@@ -109,6 +110,11 @@ static cl::opt<unsigned> SampleProfileSampleCoverage(
     "sample-profile-check-sample-coverage", cl::init(0), cl::value_desc("N"),
     cl::desc("Emit a warning if less than N% of samples in the input profile "
              "are matched to the IR."));
+
+static cl::opt<bool> NoWarnSampleUnused(
+    "no-warn-sample-unused", cl::init(false), cl::Hidden,
+    cl::desc("Use this option to turn off/on warnings about function with "
+             "samples but without debug information to use those samples. "));
 
 namespace {
 
@@ -253,7 +259,7 @@ protected:
 
   /// Dominance, post-dominance and loop information.
   std::unique_ptr<DominatorTree> DT;
-  std::unique_ptr<PostDomTreeBase<BasicBlock>> PDT;
+  std::unique_ptr<PostDominatorTree> PDT;
   std::unique_ptr<LoopInfo> LI;
 
   std::function<AssumptionCache &(Function &)> GetAC;
@@ -557,11 +563,11 @@ ErrorOr<uint64_t> SampleProfileLoader::getInstWeight(const Instruction &Inst) {
         return Remark;
       });
     }
-    DEBUG(dbgs() << "    " << DLoc.getLine() << "."
-                 << DIL->getBaseDiscriminator() << ":" << Inst
-                 << " (line offset: " << LineOffset << "."
-                 << DIL->getBaseDiscriminator() << " - weight: " << R.get()
-                 << ")\n");
+    LLVM_DEBUG(dbgs() << "    " << DLoc.getLine() << "."
+                      << DIL->getBaseDiscriminator() << ":" << Inst
+                      << " (line offset: " << LineOffset << "."
+                      << DIL->getBaseDiscriminator() << " - weight: " << R.get()
+                      << ")\n");
   }
   return R;
 }
@@ -595,7 +601,7 @@ ErrorOr<uint64_t> SampleProfileLoader::getBlockWeight(const BasicBlock *BB) {
 /// \param F The function to query.
 bool SampleProfileLoader::computeBlockWeights(Function &F) {
   bool Changed = false;
-  DEBUG(dbgs() << "Block weights\n");
+  LLVM_DEBUG(dbgs() << "Block weights\n");
   for (const auto &BB : F) {
     ErrorOr<uint64_t> Weight = getBlockWeight(&BB);
     if (Weight) {
@@ -603,7 +609,7 @@ bool SampleProfileLoader::computeBlockWeights(Function &F) {
       VisitedBlocks.insert(&BB);
       Changed = true;
     }
-    DEBUG(printBlockWeight(dbgs(), &BB));
+    LLVM_DEBUG(printBlockWeight(dbgs(), &BB));
   }
 
   return Changed;
@@ -637,6 +643,8 @@ SampleProfileLoader::findCalleeFunctionSamples(const Instruction &Inst) const {
   if (FS == nullptr)
     return nullptr;
 
+  std::string CalleeGUID;
+  CalleeName = getRepInFormat(CalleeName, Reader->getFormat(), CalleeGUID);
   return FS->findFunctionSamplesAt(LineLocation(FunctionSamples::getOffset(DIL),
                                                 DIL->getBaseDiscriminator()),
                                    CalleeName);
@@ -752,6 +760,7 @@ bool SampleProfileLoader::inlineHotFunctions(
     Function &F, DenseSet<GlobalValue::GUID> &InlinedGUIDs) {
   DenseSet<Instruction *> PromotedInsns;
   bool Changed = false;
+  bool isCompact = (Reader->getFormat() == SPF_Compact_Binary);
   while (true) {
     bool LocalChanged = false;
     SmallVector<Instruction *, 10> CIS;
@@ -783,7 +792,8 @@ bool SampleProfileLoader::inlineHotFunctions(
         for (const auto *FS : findIndirectCallFunctionSamples(*I, Sum)) {
           if (IsThinLTOPreLink) {
             FS->findInlinedFunctions(InlinedGUIDs, F.getParent(),
-                                     PSI->getOrCompHotCountThreshold());
+                                     PSI->getOrCompHotCountThreshold(),
+                                     isCompact);
             continue;
           }
           auto CalleeFunctionName = FS->getName();
@@ -792,7 +802,9 @@ bool SampleProfileLoader::inlineHotFunctions(
           // clone the caller first, and inline the cloned caller if it is
           // recursive. As llvm does not inline recursive calls, we will
           // simply ignore it instead of handling it explicitly.
-          if (CalleeFunctionName == F.getName())
+          std::string FGUID;
+          auto Fname = getRepInFormat(F.getName(), Reader->getFormat(), FGUID);
+          if (CalleeFunctionName == Fname)
             continue;
 
           const char *Reason = "Callee function not available";
@@ -811,9 +823,9 @@ bool SampleProfileLoader::inlineHotFunctions(
                 inlineCallInstruction(DI))
               LocalChanged = true;
           } else {
-            DEBUG(dbgs()
-                  << "\nFailed to promote indirect call to "
-                  << CalleeFunctionName << " because " << Reason << "\n");
+            LLVM_DEBUG(dbgs()
+                       << "\nFailed to promote indirect call to "
+                       << CalleeFunctionName << " because " << Reason << "\n");
           }
         }
       } else if (CalledFunction && CalledFunction->getSubprogram() &&
@@ -822,7 +834,8 @@ bool SampleProfileLoader::inlineHotFunctions(
           LocalChanged = true;
       } else if (IsThinLTOPreLink) {
         findCalleeFunctionSamples(*I)->findInlinedFunctions(
-            InlinedGUIDs, F.getParent(), PSI->getOrCompHotCountThreshold());
+            InlinedGUIDs, F.getParent(), PSI->getOrCompHotCountThreshold(),
+            isCompact);
       }
     }
     if (LocalChanged) {
@@ -902,14 +915,14 @@ void SampleProfileLoader::findEquivalencesFor(
 /// \param F The function to query.
 void SampleProfileLoader::findEquivalenceClasses(Function &F) {
   SmallVector<BasicBlock *, 8> DominatedBBs;
-  DEBUG(dbgs() << "\nBlock equivalence classes\n");
+  LLVM_DEBUG(dbgs() << "\nBlock equivalence classes\n");
   // Find equivalence sets based on dominance and post-dominance information.
   for (auto &BB : F) {
     BasicBlock *BB1 = &BB;
 
     // Compute BB1's equivalence class once.
     if (EquivalenceClass.count(BB1)) {
-      DEBUG(printBlockEquivalence(dbgs(), BB1));
+      LLVM_DEBUG(printBlockEquivalence(dbgs(), BB1));
       continue;
     }
 
@@ -930,7 +943,7 @@ void SampleProfileLoader::findEquivalenceClasses(Function &F) {
     DT->getDescendants(BB1, DominatedBBs);
     findEquivalencesFor(BB1, DominatedBBs, PDT.get());
 
-    DEBUG(printBlockEquivalence(dbgs(), BB1));
+    LLVM_DEBUG(printBlockEquivalence(dbgs(), BB1));
   }
 
   // Assign weights to equivalence classes.
@@ -939,13 +952,14 @@ void SampleProfileLoader::findEquivalenceClasses(Function &F) {
   // the same number of times. Since we know that the head block in
   // each equivalence class has the largest weight, assign that weight
   // to all the blocks in that equivalence class.
-  DEBUG(dbgs() << "\nAssign the same weight to all blocks in the same class\n");
+  LLVM_DEBUG(
+      dbgs() << "\nAssign the same weight to all blocks in the same class\n");
   for (auto &BI : F) {
     const BasicBlock *BB = &BI;
     const BasicBlock *EquivBB = EquivalenceClass[BB];
     if (BB != EquivBB)
       BlockWeights[BB] = BlockWeights[EquivBB];
-    DEBUG(printBlockWeight(dbgs(), BB));
+    LLVM_DEBUG(printBlockWeight(dbgs(), BB));
   }
 }
 
@@ -986,7 +1000,7 @@ uint64_t SampleProfileLoader::visitEdge(Edge E, unsigned *NumUnknownEdges,
 bool SampleProfileLoader::propagateThroughEdges(Function &F,
                                                 bool UpdateBlockCount) {
   bool Changed = false;
-  DEBUG(dbgs() << "\nPropagation through edges\n");
+  LLVM_DEBUG(dbgs() << "\nPropagation through edges\n");
   for (const auto &BI : F) {
     const BasicBlock *BB = &BI;
     const BasicBlock *EC = EquivalenceClass[BB];
@@ -1058,9 +1072,9 @@ bool SampleProfileLoader::propagateThroughEdges(Function &F,
             if (TotalWeight > BBWeight) {
               BBWeight = TotalWeight;
               Changed = true;
-              DEBUG(dbgs() << "All edge weights for " << BB->getName()
-                           << " known. Set weight for block: ";
-                    printBlockWeight(dbgs(), BB););
+              LLVM_DEBUG(dbgs() << "All edge weights for " << BB->getName()
+                                << " known. Set weight for block: ";
+                         printBlockWeight(dbgs(), BB););
             }
           } else if (NumTotalEdges == 1 &&
                      EdgeWeights[SingleEdge] < BlockWeights[EC]) {
@@ -1087,8 +1101,8 @@ bool SampleProfileLoader::propagateThroughEdges(Function &F,
             EdgeWeights[UnknownEdge] = BlockWeights[OtherEC];
           VisitedEdges.insert(UnknownEdge);
           Changed = true;
-          DEBUG(dbgs() << "Set weight for edge: ";
-                printEdgeWeight(dbgs(), UnknownEdge));
+          LLVM_DEBUG(dbgs() << "Set weight for edge: ";
+                     printEdgeWeight(dbgs(), UnknownEdge));
         }
       } else if (VisitedBlocks.count(EC) && BlockWeights[EC] == 0) {
         // If a block Weights 0, all its in/out edges should weight 0.
@@ -1114,8 +1128,8 @@ bool SampleProfileLoader::propagateThroughEdges(Function &F,
           EdgeWeights[SelfReferentialEdge] = 0;
         VisitedEdges.insert(SelfReferentialEdge);
         Changed = true;
-        DEBUG(dbgs() << "Set self-referential edge weight to: ";
-              printEdgeWeight(dbgs(), SelfReferentialEdge));
+        LLVM_DEBUG(dbgs() << "Set self-referential edge weight to: ";
+                   printEdgeWeight(dbgs(), SelfReferentialEdge));
       }
       if (UpdateBlockCount && !VisitedBlocks.count(EC) && TotalWeight > 0) {
         BlockWeights[EC] = TotalWeight;
@@ -1239,7 +1253,7 @@ void SampleProfileLoader::propagateWeights(Function &F) {
 
   // Generate MD_prof metadata for every branch instruction using the
   // edge weights computed during propagation.
-  DEBUG(dbgs() << "\nPropagation complete. Setting branch weights\n");
+  LLVM_DEBUG(dbgs() << "\nPropagation complete. Setting branch weights\n");
   LLVMContext &Ctx = F.getContext();
   MDBuilder MDB(Ctx);
   for (auto &BI : F) {
@@ -1285,10 +1299,10 @@ void SampleProfileLoader::propagateWeights(Function &F) {
       continue;
 
     DebugLoc BranchLoc = TI->getDebugLoc();
-    DEBUG(dbgs() << "\nGetting weights for branch at line "
-                 << ((BranchLoc) ? Twine(BranchLoc.getLine())
-                                 : Twine("<UNKNOWN LOCATION>"))
-                 << ".\n");
+    LLVM_DEBUG(dbgs() << "\nGetting weights for branch at line "
+                      << ((BranchLoc) ? Twine(BranchLoc.getLine())
+                                      : Twine("<UNKNOWN LOCATION>"))
+                      << ".\n");
     SmallVector<uint32_t, 4> Weights;
     uint32_t MaxWeight = 0;
     Instruction *MaxDestInst;
@@ -1296,12 +1310,12 @@ void SampleProfileLoader::propagateWeights(Function &F) {
       BasicBlock *Succ = TI->getSuccessor(I);
       Edge E = std::make_pair(BB, Succ);
       uint64_t Weight = EdgeWeights[E];
-      DEBUG(dbgs() << "\t"; printEdgeWeight(dbgs(), E));
+      LLVM_DEBUG(dbgs() << "\t"; printEdgeWeight(dbgs(), E));
       // Use uint32_t saturated arithmetic to adjust the incoming weights,
       // if needed. Sample counts in profiles are 64-bit unsigned values,
       // but internally branch weights are expressed as 32-bit values.
       if (Weight > std::numeric_limits<uint32_t>::max()) {
-        DEBUG(dbgs() << " (saturated due to uint32_t overflow)");
+        LLVM_DEBUG(dbgs() << " (saturated due to uint32_t overflow)");
         Weight = std::numeric_limits<uint32_t>::max();
       }
       // Weight is added by one to avoid propagation errors introduced by
@@ -1322,7 +1336,7 @@ void SampleProfileLoader::propagateWeights(Function &F) {
     // annotation is done twice. If the first annotation already set the
     // weights, the second pass does not need to set it.
     if (MaxWeight > 0 && !TI->extractProfTotalWeight(TempWeight)) {
-      DEBUG(dbgs() << "SUCCESS. Found non-zero weights.\n");
+      LLVM_DEBUG(dbgs() << "SUCCESS. Found non-zero weights.\n");
       TI->setMetadata(LLVMContext::MD_prof,
                       MDB.createBranchWeights(Weights));
       ORE->emit([&]() {
@@ -1331,7 +1345,7 @@ void SampleProfileLoader::propagateWeights(Function &F) {
                << ore::NV("CondBranchesLoc", BranchLoc);
       });
     } else {
-      DEBUG(dbgs() << "SKIPPED. All branch weights are zero.\n");
+      LLVM_DEBUG(dbgs() << "SKIPPED. All branch weights are zero.\n");
     }
   }
 }
@@ -1351,6 +1365,9 @@ unsigned SampleProfileLoader::getFunctionLoc(Function &F) {
   if (DISubprogram *S = F.getSubprogram())
     return S->getLine();
 
+  if (NoWarnSampleUnused)
+    return 0;
+
   // If the start of \p F is missing, emit a diagnostic to inform the user
   // about the missed opportunity.
   F.getContext().diagnose(DiagnosticInfoSampleProfile(
@@ -1364,8 +1381,7 @@ void SampleProfileLoader::computeDominanceAndLoopInfo(Function &F) {
   DT.reset(new DominatorTree);
   DT->recalculate(F);
 
-  PDT.reset(new PostDomTreeBase<BasicBlock>());
-  PDT->recalculate(F);
+  PDT.reset(new PostDominatorTree(F));
 
   LI.reset(new LoopInfo);
   LI->analyze(*DT);
@@ -1426,8 +1442,8 @@ bool SampleProfileLoader::emitAnnotations(Function &F) {
   if (getFunctionLoc(F) == 0)
     return false;
 
-  DEBUG(dbgs() << "Line number for the first instruction in " << F.getName()
-               << ": " << getFunctionLoc(F) << "\n");
+  LLVM_DEBUG(dbgs() << "Line number for the first instruction in "
+                    << F.getName() << ": " << getFunctionLoc(F) << "\n");
 
   DenseSet<GlobalValue::GUID> InlinedGUIDs;
   Changed |= inlineHotFunctions(F, InlinedGUIDs);

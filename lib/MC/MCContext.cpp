@@ -105,6 +105,7 @@ void MCContext::reset() {
   MachOUniquingMap.clear();
   ELFUniquingMap.clear();
   COFFUniquingMap.clear();
+  WasmUniquingMap.clear();
 
   NextID.clear();
   AllowTemporaryLabels = true;
@@ -555,11 +556,13 @@ Expected<unsigned> MCContext::getDwarfFile(StringRef Directory,
 /// isValidDwarfFileNumber - takes a dwarf file number and returns true if it
 /// currently is assigned and false otherwise.
 bool MCContext::isValidDwarfFileNumber(unsigned FileNumber, unsigned CUID) {
-  const SmallVectorImpl<MCDwarfFile> &MCDwarfFiles = getMCDwarfFiles(CUID);
-  if (FileNumber == 0 || FileNumber >= MCDwarfFiles.size())
+  const MCDwarfLineTable &LineTable = getMCDwarfLineTable(CUID);
+  if (FileNumber == 0)
+    return getDwarfVersion() >= 5 && LineTable.hasRootFile();
+  if (FileNumber >= LineTable.getMCDwarfFiles().size())
     return false;
 
-  return !MCDwarfFiles[FileNumber].Name.empty();
+  return !LineTable.getMCDwarfFiles()[FileNumber].Name.empty();
 }
 
 /// Remove empty sections from SectionStartEndSyms, to avoid generating

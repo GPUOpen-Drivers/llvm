@@ -589,7 +589,7 @@ bool SystemZDAGToDAGISel::selectAddress(SDValue Addr,
   if (AM.isDynAlloc() && !AM.IncludesDynAlloc)
     return false;
 
-  DEBUG(AM.dump());
+  LLVM_DEBUG(AM.dump());
   return true;
 }
 
@@ -1427,7 +1427,7 @@ bool SystemZDAGToDAGISel::storeLoadCanUseBlockBinary(SDNode *N,
 void SystemZDAGToDAGISel::Select(SDNode *Node) {
   // If we have a custom node, we already have selected!
   if (Node->isMachineOpcode()) {
-    DEBUG(errs() << "== "; Node->dump(CurDAG); errs() << "\n");
+    LLVM_DEBUG(errs() << "== "; Node->dump(CurDAG); errs() << "\n");
     Node->setNodeId(-1);
     return;
   }
@@ -1509,7 +1509,13 @@ void SystemZDAGToDAGISel::Select(SDNode *Node) {
       CCMask = CurDAG->getConstant(ConstCCValid ^ ConstCCMask, SDLoc(Node),
                                    CCMask.getValueType());
       SDValue Op4 = Node->getOperand(4);
-      Node = CurDAG->UpdateNodeOperands(Node, Op1, Op0, CCValid, CCMask, Op4);
+      SDNode *UpdatedNode =
+        CurDAG->UpdateNodeOperands(Node, Op1, Op0, CCValid, CCMask, Op4);
+      if (UpdatedNode != Node) {
+        // In case this node already exists then replace Node with it.
+        ReplaceNode(Node, UpdatedNode);
+        Node = UpdatedNode;
+      }
     }
     break;
   }
@@ -1827,11 +1833,11 @@ void SystemZDAGToDAGISel::PreprocessISelDAG() {
     }
 
     if (Res) {
-      DEBUG(dbgs() << "SystemZ DAG preprocessing replacing:\nOld:    ");
-      DEBUG(N->dump(CurDAG));
-      DEBUG(dbgs() << "\nNew: ");
-      DEBUG(Res.getNode()->dump(CurDAG));
-      DEBUG(dbgs() << "\n");
+      LLVM_DEBUG(dbgs() << "SystemZ DAG preprocessing replacing:\nOld:    ");
+      LLVM_DEBUG(N->dump(CurDAG));
+      LLVM_DEBUG(dbgs() << "\nNew: ");
+      LLVM_DEBUG(Res.getNode()->dump(CurDAG));
+      LLVM_DEBUG(dbgs() << "\n");
 
       CurDAG->ReplaceAllUsesOfValueWith(SDValue(N, 0), Res);
       MadeChange = true;

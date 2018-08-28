@@ -23,11 +23,13 @@
 namespace llvm {
 
 class AMDGPUMachineFunction;
-class AMDGPUSubtarget;
+class AMDGPUCommonSubtarget;
 struct ArgDescriptor;
 
 class AMDGPUTargetLowering : public TargetLowering {
 private:
+  const AMDGPUCommonSubtarget *Subtarget;
+
   /// \returns AMDGPUISD::FFBH_U32 node if the incoming \p Op may have been
   /// legalized from a smaller type VT. Need to match pre-legalized type because
   /// the generic legalization inserts the add/sub between the select and
@@ -39,7 +41,6 @@ public:
   static unsigned numBitsSigned(SDValue Op, SelectionDAG &DAG);
 
 protected:
-  const AMDGPUSubtarget *Subtarget;
   AMDGPUAS AMDGPUASI;
 
   SDValue LowerEXTRACT_SUBVECTOR(SDValue Op, SelectionDAG &DAG) const;
@@ -78,7 +79,6 @@ protected:
   bool shouldCombineMemoryType(EVT VT) const;
   SDValue performLoadCombine(SDNode *N, DAGCombinerInfo &DCI) const;
   SDValue performStoreCombine(SDNode *N, DAGCombinerInfo &DCI) const;
-  SDValue performClampCombine(SDNode *N, DAGCombinerInfo &DCI) const;
   SDValue performAssertSZExtCombine(SDNode *N, DAGCombinerInfo &DCI) const;
 
   SDValue splitBinaryBitConstantOpImpl(DAGCombinerInfo &DCI, const SDLoc &SL,
@@ -97,6 +97,7 @@ protected:
   SDValue performSelectCombine(SDNode *N, DAGCombinerInfo &DCI) const;
   SDValue performFNegCombine(SDNode *N, DAGCombinerInfo &DCI) const;
   SDValue performFAbsCombine(SDNode *N, DAGCombinerInfo &DCI) const;
+  SDValue performRcpCombine(SDNode *N, DAGCombinerInfo &DCI) const;
 
   static EVT getEquivalentMemType(LLVMContext &Context, EVT VT);
 
@@ -124,7 +125,7 @@ protected:
   void analyzeFormalArgumentsCompute(CCState &State,
                               const SmallVectorImpl<ISD::InputArg> &Ins) const;
 public:
-  AMDGPUTargetLowering(const TargetMachine &TM, const AMDGPUSubtarget &STI);
+  AMDGPUTargetLowering(const TargetMachine &TM, const AMDGPUCommonSubtarget &STI);
 
   bool mayIgnoreSignedZero(SDValue Op) const {
     if (getTargetMachine().Options.NoSignedZerosFPMath)
@@ -137,6 +138,10 @@ public:
     return false;
   }
 
+  static inline SDValue stripBitcast(SDValue Val) {
+    return Val.getOpcode() == ISD::BITCAST ? Val.getOperand(0) : Val;
+  }
+
   static bool allUsesHaveSourceMods(const SDNode *N,
                                     unsigned CostThreshold = 4);
   bool isFAbsFree(EVT VT) const override;
@@ -147,7 +152,6 @@ public:
   bool isZExtFree(Type *Src, Type *Dest) const override;
   bool isZExtFree(EVT Src, EVT Dest) const override;
   bool isZExtFree(SDValue Val, EVT VT2) const override;
-  bool isFPExtFoldable(unsigned Opcode, EVT DestVT, EVT SrcVT) const override;
 
   bool isNarrowingProfitable(EVT VT1, EVT VT2) const override;
 
@@ -169,8 +173,6 @@ public:
   bool isCheapToSpeculateCttz() const override;
   bool isCheapToSpeculateCtlz() const override;
 
-  bool isSDNodeSourceOfDivergence(const SDNode *N,
-    FunctionLoweringInfo *FLI, DivergenceAnalysis *DA) const override;
   bool isSDNodeAlwaysUniform(const SDNode *N) const override;
   static CCAssignFn *CCAssignFnForCall(CallingConv::ID CC, bool IsVarArg);
   static CCAssignFn *CCAssignFnForReturn(CallingConv::ID CC, bool IsVarArg);
@@ -291,7 +293,7 @@ public:
 
   /// Helper function that returns the byte offset of the given
   /// type of implicit parameter.
-  uint32_t getImplicitParameterOffset(const AMDGPUMachineFunction *MFI,
+  uint32_t getImplicitParameterOffset(const MachineFunction &MF,
                                       const ImplicitParameter Param) const;
 
   AMDGPUAS getAMDGPUAS() const {
@@ -376,6 +378,7 @@ enum NodeType : unsigned {
   RSQ,
   RCP_LEGACY,
   RSQ_LEGACY,
+  RCP_IFLAG,
   FMUL_LEGACY,
   RSQ_CLAMP,
   LDEXP,
@@ -400,6 +403,7 @@ enum NodeType : unsigned {
   MAD_I64_I32,
   MUL_LOHI_I24,
   MUL_LOHI_U24,
+  PERM,
   TEXTURE_FETCH,
   EXPORT, // exp on SI+
   EXPORT_DONE, // exp on SI+ with done bit set

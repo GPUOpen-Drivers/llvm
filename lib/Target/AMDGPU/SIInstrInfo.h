@@ -31,6 +31,9 @@
 #include <cassert>
 #include <cstdint>
 
+#define GET_INSTRINFO_HEADER
+#include "AMDGPUGenInstrInfo.inc"
+
 namespace llvm {
 
 class APInt;
@@ -39,7 +42,7 @@ class RegScavenger;
 class SISubtarget;
 class TargetRegisterClass;
 
-class SIInstrInfo final : public AMDGPUInstrInfo {
+class SIInstrInfo final : public AMDGPUGenInstrInfo {
 private:
   const SIRegisterInfo RI;
   const SISubtarget &ST;
@@ -165,7 +168,10 @@ public:
 
   bool shouldClusterMemOps(MachineInstr &FirstLdSt, unsigned BaseReg1,
                            MachineInstr &SecondLdSt, unsigned BaseReg2,
-                           unsigned NumLoads) const final;
+                           unsigned NumLoads) const override;
+
+  bool shouldScheduleLoadsNear(SDNode *Load0, SDNode *Load1, int64_t Offset0,
+                               int64_t Offset1, unsigned NumLoads) const override;
 
   void copyPhysReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator MI,
                    const DebugLoc &DL, unsigned DestReg, unsigned SrcReg,
@@ -421,18 +427,7 @@ public:
     return get(Opcode).TSFlags & SIInstrFlags::SMRD;
   }
 
-  bool isBufferSMRD(const MachineInstr &MI) const {
-    if (!isSMRD(MI))
-      return false;
-
-    // Check that it is using a buffer resource.
-    int Idx = AMDGPU::getNamedOperandIdx(MI.getOpcode(), AMDGPU::OpName::sbase);
-    if (Idx == -1) // e.g. s_memtime
-      return false;
-
-    const auto RCID = MI.getDesc().OpInfo[Idx].RegClass;
-    return RCID == AMDGPU::SReg_128RegClassID;
-  }
+  bool isBufferSMRD(const MachineInstr &MI) const;
 
   static bool isDS(const MachineInstr &MI) {
     return MI.getDesc().TSFlags & SIInstrFlags::DS;
@@ -456,14 +451,6 @@ public:
 
   bool isGather4(uint16_t Opcode) const {
     return get(Opcode).TSFlags & SIInstrFlags::Gather4;
-  }
-
-  static bool isD16(const MachineInstr &MI) {
-    return MI.getDesc().TSFlags & SIInstrFlags::D16;
-  }
-
-  bool isD16(uint16_t Opcode) const {
-    return get(Opcode).TSFlags & SIInstrFlags::D16;
   }
 
   static bool isFLAT(const MachineInstr &MI) {
@@ -602,6 +589,14 @@ public:
                                 SIInstrFlags::ClampLo |
                                 SIInstrFlags::ClampHi;
       return MI.getDesc().TSFlags & ClampFlags;
+  }
+
+  static bool usesFPDPRounding(const MachineInstr &MI) {
+    return MI.getDesc().TSFlags & SIInstrFlags::FPDPRounding;
+  }
+
+  bool usesFPDPRounding(uint16_t Opcode) const {
+    return get(Opcode).TSFlags & SIInstrFlags::FPDPRounding;
   }
 
   bool isVGPRCopy(const MachineInstr &MI) const {
@@ -894,6 +889,12 @@ public:
   static bool isLegalMUBUFImmOffset(unsigned Imm) {
     return isUInt<12>(Imm);
   }
+
+  /// \brief Return a target-specific opcode if Opcode is a pseudo instruction.
+  /// Return -1 if the target-specific opcode for the pseudo instruction does
+  /// not exist. If Opcode is not a pseudo instruction, this is identity.
+  int pseudoToMCOpcode(int Opcode) const;
+
 };
 
 namespace AMDGPU {

@@ -430,7 +430,7 @@ bool HexagonInstrInfo::analyzeBranch(MachineBasicBlock &MBB,
   // Delete the J2_jump if it's equivalent to a fall-through.
   if (AllowModify && JumpToBlock &&
       MBB.isLayoutSuccessor(I->getOperand(0).getMBB())) {
-    DEBUG(dbgs() << "\nErasing the jump to successor block\n";);
+    LLVM_DEBUG(dbgs() << "\nErasing the jump to successor block\n";);
     I->eraseFromParent();
     I = MBB.instr_end();
     if (I == MBB.instr_begin())
@@ -499,8 +499,8 @@ bool HexagonInstrInfo::analyzeBranch(MachineBasicBlock &MBB,
       Cond.push_back(LastInst->getOperand(1));
       return false;
     }
-    DEBUG(dbgs() << "\nCant analyze " << printMBBReference(MBB)
-                 << " with one jump\n";);
+    LLVM_DEBUG(dbgs() << "\nCant analyze " << printMBBReference(MBB)
+                      << " with one jump\n";);
     // Otherwise, don't know what this is.
     return true;
   }
@@ -547,8 +547,8 @@ bool HexagonInstrInfo::analyzeBranch(MachineBasicBlock &MBB,
     FBB = LastInst->getOperand(0).getMBB();
     return false;
   }
-  DEBUG(dbgs() << "\nCant analyze " << printMBBReference(MBB)
-               << " with two jumps";);
+  LLVM_DEBUG(dbgs() << "\nCant analyze " << printMBBReference(MBB)
+                    << " with two jumps";);
   // Otherwise, can't handle this.
   return true;
 }
@@ -557,7 +557,7 @@ unsigned HexagonInstrInfo::removeBranch(MachineBasicBlock &MBB,
                                         int *BytesRemoved) const {
   assert(!BytesRemoved && "code size not handled");
 
-  DEBUG(dbgs() << "\nRemoving branches out of " << printMBBReference(MBB));
+  LLVM_DEBUG(dbgs() << "\nRemoving branches out of " << printMBBReference(MBB));
   MachineBasicBlock::iterator I = MBB.end();
   unsigned Count = 0;
   while (I != MBB.begin()) {
@@ -629,7 +629,8 @@ unsigned HexagonInstrInfo::insertBranch(MachineBasicBlock &MBB,
       // (ins IntRegs:$src1, IntRegs:$src2, brtarget:$offset)
       // (ins IntRegs:$src1, u5Imm:$src2, brtarget:$offset)
       unsigned Flags1 = getUndefRegState(Cond[1].isUndef());
-      DEBUG(dbgs() << "\nInserting NVJump for " << printMBBReference(MBB););
+      LLVM_DEBUG(dbgs() << "\nInserting NVJump for "
+                        << printMBBReference(MBB););
       if (Cond[2].isReg()) {
         unsigned Flags2 = getUndefRegState(Cond[2].isUndef());
         BuildMI(&MBB, DL, get(BccOpc)).addReg(Cond[1].getReg(), Flags1).
@@ -1152,6 +1153,14 @@ bool HexagonInstrInfo::expandPostRAPseudo(MachineInstr &MI) const {
       MBB.erase(MI);
       return true;
     }
+    case Hexagon::PS_vdd0: {
+      unsigned Vd = MI.getOperand(0).getReg();
+      BuildMI(MBB, MI, DL, get(Hexagon::V6_vsubw_dv), Vd)
+        .addReg(Vd, RegState::Undef)
+        .addReg(Vd, RegState::Undef);
+      MBB.erase(MI);
+      return true;
+    }
     case Hexagon::PS_vmulw: {
       // Expand a 64-bit vector multiply into 2 32-bit scalar multiplies.
       unsigned DstReg = MI.getOperand(0).getReg();
@@ -1501,7 +1510,7 @@ bool HexagonInstrInfo::PredicateInstruction(
     MachineInstr &MI, ArrayRef<MachineOperand> Cond) const {
   if (Cond.empty() || isNewValueJump(Cond[0].getImm()) ||
       isEndLoopN(Cond[0].getImm())) {
-    DEBUG(dbgs() << "\nCannot predicate:"; MI.dump(););
+    LLVM_DEBUG(dbgs() << "\nCannot predicate:"; MI.dump(););
     return false;
   }
   int Opc = MI.getOpcode();
@@ -1591,7 +1600,7 @@ bool HexagonInstrInfo::isPredicable(const MachineInstr &MI) const {
   }
 
   // HVX loads are not predicable on v60, but are on v62.
-  if (!Subtarget.hasV62TOps()) {
+  if (!Subtarget.hasV62Ops()) {
     switch (MI.getOpcode()) {
       case Hexagon::V6_vL32b_ai:
       case Hexagon::V6_vL32b_pi:
@@ -2251,13 +2260,13 @@ bool HexagonInstrInfo::isLateInstrFeedsEarlyInstr(const MachineInstr &LRMI,
   bool isLate = isLateResultInstr(LRMI);
   bool isEarly = isEarlySourceInstr(ESMI);
 
-  DEBUG(dbgs() << "V60" <<  (isLate ? "-LR  " : " --  "));
-  DEBUG(LRMI.dump());
-  DEBUG(dbgs() << "V60" <<  (isEarly ? "-ES  " : " --  "));
-  DEBUG(ESMI.dump());
+  LLVM_DEBUG(dbgs() << "V60" << (isLate ? "-LR  " : " --  "));
+  LLVM_DEBUG(LRMI.dump());
+  LLVM_DEBUG(dbgs() << "V60" << (isEarly ? "-ES  " : " --  "));
+  LLVM_DEBUG(ESMI.dump());
 
   if (isLate && isEarly) {
-    DEBUG(dbgs() << "++Is Late Result feeding Early Source\n");
+    LLVM_DEBUG(dbgs() << "++Is Late Result feeding Early Source\n");
     return true;
   }
 
@@ -2584,6 +2593,8 @@ bool HexagonInstrInfo::isValidAutoIncImm(const EVT VT, int Offset) const {
     case MVT::i16:
     case MVT::i32:
     case MVT::i64:
+    case MVT::f32:
+    case MVT::f64:
     case MVT::v2i16:
     case MVT::v2i32:
     case MVT::v4i8:
@@ -2977,11 +2988,14 @@ bool HexagonInstrInfo::hasUncondBranch(const MachineBasicBlock *B)
 bool HexagonInstrInfo::mayBeCurLoad(const MachineInstr &MI) const {
   const uint64_t F = MI.getDesc().TSFlags;
   return ((F >> HexagonII::mayCVLoadPos) & HexagonII::mayCVLoadMask) &&
-         Subtarget.hasV60TOps();
+         Subtarget.hasV60Ops();
 }
 
 // Returns true, if a ST insn can be promoted to a new-value store.
 bool HexagonInstrInfo::mayBeNewStore(const MachineInstr &MI) const {
+  if (MI.mayStore() && !Subtarget.useNewValueStores())
+    return false;
+
   const uint64_t F = MI.getDesc().TSFlags;
   return (F >> HexagonII::mayNVStorePos) & HexagonII::mayNVStoreMask;
 }
@@ -3034,10 +3048,29 @@ bool HexagonInstrInfo::predCanBeUsedAsDotNew(const MachineInstr &MI,
       return false;
   }
 
-  // Hexagon Programmer's Reference says that decbin, memw_locked, and
-  // memd_locked cannot be used as .new as well,
-  // but we don't seem to have these instructions defined.
-  return MI.getOpcode() != Hexagon::A4_tlbmatch;
+  // Instruction that produce late predicate cannot be used as sources of
+  // dot-new.
+  switch (MI.getOpcode()) {
+    case Hexagon::A4_addp_c:
+    case Hexagon::A4_subp_c:
+    case Hexagon::A4_tlbmatch:
+    case Hexagon::A5_ACS:
+    case Hexagon::F2_sfinvsqrta:
+    case Hexagon::F2_sfrecipa:
+    case Hexagon::J2_endloop0:
+    case Hexagon::J2_endloop01:
+    case Hexagon::J2_ploop1si:
+    case Hexagon::J2_ploop1sr:
+    case Hexagon::J2_ploop2si:
+    case Hexagon::J2_ploop2sr:
+    case Hexagon::J2_ploop3si:
+    case Hexagon::J2_ploop3sr:
+    case Hexagon::S2_cabacdecbin:
+    case Hexagon::S2_storew_locked:
+    case Hexagon::S4_stored_locked:
+      return false;
+  }
+  return true;
 }
 
 bool HexagonInstrInfo::PredOpcodeHasJMP_c(unsigned Opcode) const {
@@ -3613,7 +3646,7 @@ int HexagonInstrInfo::getDotOldOp(const MachineInstr &MI) const {
     assert(NewOp >= 0 && "Couldn't change new-value store to its old form.");
   }
 
-  if (Subtarget.hasV60TOps())
+  if (Subtarget.hasV60Ops())
     return NewOp;
 
   // Subtargets prior to V60 didn't support 'taken' forms of predicated jumps.
@@ -4174,7 +4207,7 @@ bool HexagonInstrInfo::getPredReg(ArrayRef<MachineOperand> Cond,
     return false;
   assert(Cond.size() == 2);
   if (isNewValueJump(Cond[0].getImm()) || Cond[1].isMBB()) {
-    DEBUG(dbgs() << "No predregs for new-value jumps/endloop");
+    LLVM_DEBUG(dbgs() << "No predregs for new-value jumps/endloop");
     return false;
   }
   PredReg = Cond[1].getReg();
@@ -4276,9 +4309,9 @@ void HexagonInstrInfo::immediateExtend(MachineInstr &MI) const {
 
 bool HexagonInstrInfo::invertAndChangeJumpTarget(
       MachineInstr &MI, MachineBasicBlock *NewTarget) const {
-  DEBUG(dbgs() << "\n[invertAndChangeJumpTarget] to "
-               << printMBBReference(*NewTarget);
-        MI.dump(););
+  LLVM_DEBUG(dbgs() << "\n[invertAndChangeJumpTarget] to "
+                    << printMBBReference(*NewTarget);
+             MI.dump(););
   assert(MI.isBranch());
   unsigned NewOpcode = getInvertedPredicatedOpcode(MI.getOpcode());
   int TargetPos = MI.getNumOperands() - 1;
@@ -4306,8 +4339,9 @@ void HexagonInstrInfo::genAllInsnTimingClasses(MachineFunction &MF) const {
   for (unsigned insn = TargetOpcode::GENERIC_OP_END+1;
        insn < Hexagon::INSTRUCTION_LIST_END; ++insn) {
     NewMI = BuildMI(B, I, DL, get(insn));
-    DEBUG(dbgs() << "\n" << getName(NewMI->getOpcode()) <<
-          "  Class: " << NewMI->getDesc().getSchedClass());
+    LLVM_DEBUG(dbgs() << "\n"
+                      << getName(NewMI->getOpcode())
+                      << "  Class: " << NewMI->getDesc().getSchedClass());
     NewMI->eraseFromParent();
   }
   /* --- The code above is used to generate complete set of Hexagon Insn --- */
@@ -4317,7 +4351,7 @@ void HexagonInstrInfo::genAllInsnTimingClasses(MachineFunction &MF) const {
 // p -> NotP
 // NotP -> P
 bool HexagonInstrInfo::reversePredSense(MachineInstr &MI) const {
-  DEBUG(dbgs() << "\nTrying to reverse pred. sense of:"; MI.dump());
+  LLVM_DEBUG(dbgs() << "\nTrying to reverse pred. sense of:"; MI.dump());
   MI.setDesc(get(getInvertedPredicatedOpcode(MI.getOpcode())));
   return true;
 }

@@ -318,10 +318,14 @@ DIDerivedType *DIBuilder::createFriend(DIType *Ty, DIType *FriendTy) {
 
 DIDerivedType *DIBuilder::createInheritance(DIType *Ty, DIType *BaseTy,
                                             uint64_t BaseOffset,
+                                            uint32_t VBPtrOffset,
                                             DINode::DIFlags Flags) {
   assert(Ty && "Unable to create inheritance");
+  Metadata *ExtraData = ConstantAsMetadata::get(
+      ConstantInt::get(IntegerType::get(VMContext, 32), VBPtrOffset));
   return DIDerivedType::get(VMContext, dwarf::DW_TAG_inheritance, "", nullptr,
-                            0, Ty, BaseTy, 0, 0, BaseOffset, None, Flags);
+                            0, Ty, BaseTy, 0, 0, BaseOffset, None,
+                            Flags, ExtraData);
 }
 
 DIDerivedType *DIBuilder::createMemberType(DIScope *Scope, StringRef Name,
@@ -531,10 +535,14 @@ DICompositeType *DIBuilder::createVectorType(uint64_t Size,
   return R;
 }
 
-static DIType *createTypeWithFlags(LLVMContext &Context, DIType *Ty,
+DISubprogram *DIBuilder::createArtificialSubprogram(DISubprogram *SP) {
+  auto NewSP = SP->cloneWithFlags(SP->getFlags() | DINode::FlagArtificial);
+  return MDNode::replaceWithDistinct(std::move(NewSP));
+}
+
+static DIType *createTypeWithFlags(const DIType *Ty,
                                    DINode::DIFlags FlagsToSet) {
-  auto NewTy = Ty->clone();
-  NewTy->setFlags(NewTy->getFlags() | FlagsToSet);
+  auto NewTy = Ty->cloneWithFlags(Ty->getFlags() | FlagsToSet);
   return MDNode::replaceWithUniqued(std::move(NewTy));
 }
 
@@ -542,7 +550,7 @@ DIType *DIBuilder::createArtificialType(DIType *Ty) {
   // FIXME: Restrict this to the nodes where it's valid.
   if (Ty->isArtificial())
     return Ty;
-  return createTypeWithFlags(VMContext, Ty, DINode::FlagArtificial);
+  return createTypeWithFlags(Ty, DINode::FlagArtificial);
 }
 
 DIType *DIBuilder::createObjectPointerType(DIType *Ty) {
@@ -550,7 +558,7 @@ DIType *DIBuilder::createObjectPointerType(DIType *Ty) {
   if (Ty->isObjectPointer())
     return Ty;
   DINode::DIFlags Flags = DINode::FlagObjectPointer | DINode::FlagArtificial;
-  return createTypeWithFlags(VMContext, Ty, Flags);
+  return createTypeWithFlags(Ty, Flags);
 }
 
 void DIBuilder::retainType(DIScope *T) {

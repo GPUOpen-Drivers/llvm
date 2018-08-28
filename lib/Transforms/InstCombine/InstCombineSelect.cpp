@@ -794,6 +794,54 @@ canonicalizeMinMaxWithConstant(SelectInst &Sel, ICmpInst &Cmp,
   return &Sel;
 }
 
+/// There are 4 select variants for each of ABS/NABS (different compare
+/// constants, compare predicates, select operands). Canonicalize to 1 pattern.
+/// This makes CSE more likely.
+static Instruction *canonicalizeAbsNabs(SelectInst &Sel, ICmpInst &Cmp,
+                                        InstCombiner::BuilderTy &Builder) {
+  if (!Cmp.hasOneUse() || !isa<Constant>(Cmp.getOperand(1)))
+    return nullptr;
+
+  // Choose a sign-bit check for the compare (likely simpler for codegen).
+  // ABS:  (X <s 0) ? -X : X
+  // NABS: (X <s 0) ? X : -X
+  Value *LHS, *RHS;
+  SelectPatternFlavor SPF = matchSelectPattern(&Sel, LHS, RHS).Flavor;
+  if (SPF != SelectPatternFlavor::SPF_ABS &&
+      SPF != SelectPatternFlavor::SPF_NABS)
+    return nullptr;
+
+  // Is this already canonical?
+  if (match(Cmp.getOperand(1), m_ZeroInt()) &&
+      Cmp.getPredicate() == ICmpInst::ICMP_SLT)
+    return nullptr;
+
+  // Create the canonical compare.
+  Cmp.setPredicate(ICmpInst::ICMP_SLT);
+  Cmp.setOperand(1, ConstantInt::getNullValue(Cmp.getOperand(0)->getType()));
+
+  // If the select operands do not change, we're done.
+  Value *TVal = Sel.getTrueValue();
+  Value *FVal = Sel.getFalseValue();
+  if (SPF == SelectPatternFlavor::SPF_NABS) {
+    if (TVal == LHS && match(FVal, m_Neg(m_Specific(TVal))))
+      return &Sel;
+    assert(FVal == LHS && match(TVal, m_Neg(m_Specific(FVal))) &&
+           "Unexpected results from matchSelectPattern");
+  } else {
+    if (FVal == LHS && match(TVal, m_Neg(m_Specific(FVal))))
+      return &Sel;
+    assert(TVal == LHS && match(FVal, m_Neg(m_Specific(TVal))) &&
+           "Unexpected results from matchSelectPattern");
+  }
+
+  // We are swapping the select operands, so swap the metadata too.
+  Sel.setTrueValue(FVal);
+  Sel.setFalseValue(TVal);
+  Sel.swapProfMetadata();
+  return &Sel;
+}
+
 /// Visit a SelectInst that has an ICmpInst as its first operand.
 Instruction *InstCombiner::foldSelectInstWithICmp(SelectInst &SI,
                                                   ICmpInst *ICI) {
@@ -802,6 +850,9 @@ Instruction *InstCombiner::foldSelectInstWithICmp(SelectInst &SI,
 
   if (Instruction *NewSel = canonicalizeMinMaxWithConstant(SI, *ICI, Builder))
     return NewSel;
+
+  if (Instruction *NewAbs = canonicalizeAbsNabs(SI, *ICI, Builder))
+    return NewAbs;
 
   bool Changed = adjustMinMax(SI, *ICI);
 
@@ -938,7 +989,7 @@ Instruction *InstCombiner::foldSPFofSPF(Instruction *Inner,
   if (C == A || C == B) {
     // MAX(MAX(A, B), B) -> MAX(A, B)
     // MIN(MIN(a, b), a) -> MIN(a, b)
-    if (SPF1 == SPF2)
+    if (SPF1 == SPF2 && SelectPatternResult::isMinOrMax(SPF1))
       return replaceInstUsesWith(Outer, Inner);
 
     // MAX(MIN(a, b), a) -> a
@@ -1113,6 +1164,11 @@ static Instruction *foldAddSubSelect(SelectInst &SI,
 }
 
 Instruction *InstCombiner::foldSelectExtConst(SelectInst &Sel) {
+  Constant *C;
+  if (!match(Sel.getTrueValue(), m_Constant(C)) &&
+      !match(Sel.getFalseValue(), m_Constant(C)))
+    return nullptr;
+
   Instruction *ExtInst;
   if (!match(Sel.getTrueValue(), m_Instruction(ExtInst)) &&
       !match(Sel.getFalseValue(), m_Instruction(ExtInst)))
@@ -1122,20 +1178,18 @@ Instruction *InstCombiner::foldSelectExtConst(SelectInst &Sel) {
   if (ExtOpcode != Instruction::ZExt && ExtOpcode != Instruction::SExt)
     return nullptr;
 
-  // TODO: Handle larger types? That requires adjusting FoldOpIntoSelect too.
+  // If we are extending from a boolean type or if we can create a select that
+  // has the same size operands as its condition, try to narrow the select.
   Value *X = ExtInst->getOperand(0);
   Type *SmallType = X->getType();
-  if (!SmallType->isIntOrIntVectorTy(1))
-    return nullptr;
-
-  Constant *C;
-  if (!match(Sel.getTrueValue(), m_Constant(C)) &&
-      !match(Sel.getFalseValue(), m_Constant(C)))
+  Value *Cond = Sel.getCondition();
+  auto *Cmp = dyn_cast<CmpInst>(Cond);
+  if (!SmallType->isIntOrIntVectorTy(1) &&
+      (!Cmp || Cmp->getOperand(0)->getType() != SmallType))
     return nullptr;
 
   // If the constant is the same after truncation to the smaller type and
   // extension to the original type, we can narrow the select.
-  Value *Cond = Sel.getCondition();
   Type *SelType = Sel.getType();
   Constant *TruncC = ConstantExpr::getTrunc(C, SmallType);
   Constant *ExtC = ConstantExpr::getCast(ExtOpcode, TruncC, SelType);

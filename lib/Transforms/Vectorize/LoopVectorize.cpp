@@ -56,6 +56,8 @@
 
 #include "llvm/Transforms/Vectorize/LoopVectorize.h"
 #include "LoopVectorizationPlanner.h"
+#include "VPRecipeBuilder.h"
+#include "VPlanHCFGBuilder.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -67,7 +69,6 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
@@ -243,6 +244,17 @@ static cl::opt<bool> EnableVPlanNativePath(
     "enable-vplan-native-path", cl::init(false), cl::Hidden,
     cl::desc("Enable VPlan-native vectorization path with "
              "support for outer loop vectorization."));
+
+// This flag enables the stress testing of the VPlan H-CFG construction in the
+// VPlan-native vectorization path. It must be used in conjuction with
+// -enable-vplan-native-path. -vplan-verify-hcfg can also be used to enable the
+// verification of the H-CFGs built.
+static cl::opt<bool> VPlanBuildStressTest(
+    "vplan-build-stress-test", cl::init(false), cl::Hidden,
+    cl::desc(
+        "Build VPlan for every supported loop nest in the function and bail "
+        "out right after the build (stress test the VPlan H-CFG construction "
+        "in the VPlan-native vectorization path)."));
 
 /// A helper function for converting Scalar types to vector types.
 /// If the incoming type is void, we return void. If the VF is 1, we return
@@ -945,7 +957,7 @@ public:
     : PSE(PSE), TheLoop(L), DT(DT), LI(LI), LAI(LAI) {}
 
   ~InterleavedAccessInfo() {
-    SmallSet<InterleaveGroup *, 4> DelSet;
+    SmallPtrSet<InterleaveGroup *, 4> DelSet;
     // Avoid releasing a pointer twice.
     for (auto &I : InterleaveGroupMap)
       DelSet.insert(I.second);
@@ -1628,20 +1640,20 @@ static bool isExplicitVecOuterLoop(Loop *OuterLp,
 
   Function *Fn = OuterLp->getHeader()->getParent();
   if (!Hints.allowVectorization(Fn, OuterLp, false /*AlwaysVectorize*/)) {
-    DEBUG(dbgs() << "LV: Loop hints prevent outer loop vectorization.\n");
+    LLVM_DEBUG(dbgs() << "LV: Loop hints prevent outer loop vectorization.\n");
     return false;
   }
 
   if (!Hints.getWidth()) {
-    DEBUG(dbgs() << "LV: Not vectorizing: No user vector width.\n");
+    LLVM_DEBUG(dbgs() << "LV: Not vectorizing: No user vector width.\n");
     emitMissedWarning(Fn, OuterLp, Hints, ORE);
     return false;
   }
 
   if (Hints.getInterleave() > 1) {
     // TODO: Interleave support is future work.
-    DEBUG(dbgs() << "LV: Not vectorizing: Interleave is not supported for "
-                    "outer loops.\n");
+    LLVM_DEBUG(dbgs() << "LV: Not vectorizing: Interleave is not supported for "
+                         "outer loops.\n");
     emitMissedWarning(Fn, OuterLp, Hints, ORE);
     return false;
   }
@@ -1653,8 +1665,11 @@ static void collectSupportedLoops(Loop &L, LoopInfo *LI,
                                   OptimizationRemarkEmitter *ORE,
                                   SmallVectorImpl<Loop *> &V) {
   // Collect inner loops and outer loops without irreducible control flow. For
-  // now, only collect outer loops that have explicit vectorization hints.
-  if (L.empty() || (EnableVPlanNativePath && isExplicitVecOuterLoop(&L, ORE))) {
+  // now, only collect outer loops that have explicit vectorization hints. If we
+  // are stress testing the VPlan H-CFG construction, we collect the outermost
+  // loop of every loop nest.
+  if (L.empty() || VPlanBuildStressTest ||
+      (EnableVPlanNativePath && isExplicitVecOuterLoop(&L, ORE))) {
     LoopBlocksRPO RPOT(&L);
     RPOT.perform(LI);
     if (!containsIrreducibleCFG<const BasicBlock *>(RPOT, *LI)) {
@@ -2897,6 +2912,8 @@ BasicBlock *InnerLoopVectorizer::createVectorizedLoopSkeleton() {
     // Create phi nodes to merge from the  backedge-taken check block.
     PHINode *BCResumeVal = PHINode::Create(
         OrigPhi->getType(), 3, "bc.resume.val", ScalarPH->getTerminator());
+    // Copy original phi DL over to the new one.
+    BCResumeVal->setDebugLoc(OrigPhi->getDebugLoc());
     Value *&EndValue = IVEndValues[OrigPhi];
     if (OrigPhi == OldInduction) {
       // We know what the end value is.
@@ -3515,12 +3532,11 @@ void InnerLoopVectorizer::fixFirstOrderRecurrence(PHINode *Phi) {
   // Finally, fix users of the recurrence outside the loop. The users will need
   // either the last value of the scalar recurrence or the last value of the
   // vector recurrence we extracted in the middle block. Since the loop is in
-  // LCSSA form, we just need to find the phi node for the original scalar
+  // LCSSA form, we just need to find all the phi nodes for the original scalar
   // recurrence in the exit block, and then add an edge for the middle block.
   for (PHINode &LCSSAPhi : LoopExitBlock->phis()) {
     if (LCSSAPhi.getIncomingValue(0) == Phi) {
       LCSSAPhi.addIncoming(ExtractForPhiUsedOutsideLoop, LoopMiddleBlock);
-      break;
     }
   }
 }
@@ -4123,7 +4139,7 @@ void InnerLoopVectorizer::widenInstruction(Instruction &I) {
 
   default:
     // This instruction is not vectorized by simple widening.
-    DEBUG(dbgs() << "LV: Found an unhandled instruction: " << I);
+    LLVM_DEBUG(dbgs() << "LV: Found an unhandled instruction: " << I);
     llvm_unreachable("Unhandled instruction!");
   } // end of switch.
 }
@@ -4235,7 +4251,7 @@ void LoopVectorizationCostModel::collectLoopScalars(unsigned VF) {
     }
   for (auto *I : ScalarPtrs)
     if (!PossibleNonScalarPtrs.count(I)) {
-      DEBUG(dbgs() << "LV: Found scalar instruction: " << *I << "\n");
+      LLVM_DEBUG(dbgs() << "LV: Found scalar instruction: " << *I << "\n");
       Worklist.insert(I);
     }
 
@@ -4252,8 +4268,9 @@ void LoopVectorizationCostModel::collectLoopScalars(unsigned VF) {
       continue;
     Worklist.insert(Ind);
     Worklist.insert(IndUpdate);
-    DEBUG(dbgs() << "LV: Found scalar instruction: " << *Ind << "\n");
-    DEBUG(dbgs() << "LV: Found scalar instruction: " << *IndUpdate << "\n");
+    LLVM_DEBUG(dbgs() << "LV: Found scalar instruction: " << *Ind << "\n");
+    LLVM_DEBUG(dbgs() << "LV: Found scalar instruction: " << *IndUpdate
+                      << "\n");
   }
 
   // Insert the forced scalars.
@@ -4280,7 +4297,7 @@ void LoopVectorizationCostModel::collectLoopScalars(unsigned VF) {
                   isScalarUse(J, Src));
         })) {
       Worklist.insert(Src);
-      DEBUG(dbgs() << "LV: Found scalar instruction: " << *Src << "\n");
+      LLVM_DEBUG(dbgs() << "LV: Found scalar instruction: " << *Src << "\n");
     }
   }
 
@@ -4320,8 +4337,9 @@ void LoopVectorizationCostModel::collectLoopScalars(unsigned VF) {
     // The induction variable and its update instruction will remain scalar.
     Worklist.insert(Ind);
     Worklist.insert(IndUpdate);
-    DEBUG(dbgs() << "LV: Found scalar instruction: " << *Ind << "\n");
-    DEBUG(dbgs() << "LV: Found scalar instruction: " << *IndUpdate << "\n");
+    LLVM_DEBUG(dbgs() << "LV: Found scalar instruction: " << *Ind << "\n");
+    LLVM_DEBUG(dbgs() << "LV: Found scalar instruction: " << *IndUpdate
+                      << "\n");
   }
 
   Scalars[VF].insert(Worklist.begin(), Worklist.end());
@@ -4413,7 +4431,7 @@ void LoopVectorizationCostModel::collectLoopUniforms(unsigned VF) {
   auto *Cmp = dyn_cast<Instruction>(Latch->getTerminator()->getOperand(0));
   if (Cmp && TheLoop->contains(Cmp) && Cmp->hasOneUse()) {
     Worklist.insert(Cmp);
-    DEBUG(dbgs() << "LV: Found uniform instruction: " << *Cmp << "\n");
+    LLVM_DEBUG(dbgs() << "LV: Found uniform instruction: " << *Cmp << "\n");
   }
 
   // Holds consecutive and consecutive-like pointers. Consecutive-like pointers
@@ -4474,7 +4492,7 @@ void LoopVectorizationCostModel::collectLoopUniforms(unsigned VF) {
   // aren't also identified as possibly non-uniform.
   for (auto *V : ConsecutiveLikePtrs)
     if (!PossibleNonUniformPtrs.count(V)) {
-      DEBUG(dbgs() << "LV: Found uniform instruction: " << *V << "\n");
+      LLVM_DEBUG(dbgs() << "LV: Found uniform instruction: " << *V << "\n");
       Worklist.insert(V);
     }
 
@@ -4497,7 +4515,7 @@ void LoopVectorizationCostModel::collectLoopUniforms(unsigned VF) {
                     isUniformDecision(J, VF));
           })) {
         Worklist.insert(OI);
-        DEBUG(dbgs() << "LV: Found uniform instruction: " << *OI << "\n");
+        LLVM_DEBUG(dbgs() << "LV: Found uniform instruction: " << *OI << "\n");
       }
     }
   }
@@ -4542,8 +4560,9 @@ void LoopVectorizationCostModel::collectLoopUniforms(unsigned VF) {
     // The induction variable and its update instruction will remain uniform.
     Worklist.insert(Ind);
     Worklist.insert(IndUpdate);
-    DEBUG(dbgs() << "LV: Found uniform instruction: " << *Ind << "\n");
-    DEBUG(dbgs() << "LV: Found uniform instruction: " << *IndUpdate << "\n");
+    LLVM_DEBUG(dbgs() << "LV: Found uniform instruction: " << *Ind << "\n");
+    LLVM_DEBUG(dbgs() << "LV: Found uniform instruction: " << *IndUpdate
+                      << "\n");
   }
 
   Uniforms[VF].insert(Worklist.begin(), Worklist.end());
@@ -4630,7 +4649,7 @@ void InterleavedAccessInfo::collectConstStrideAccesses(
 // with other accesses that may precede it in program order. Note that a
 // bottom-up order does not imply that WAW dependences should not be checked.
 void InterleavedAccessInfo::analyzeInterleaving() {
-  DEBUG(dbgs() << "LV: Analyzing interleaved accesses...\n");
+  LLVM_DEBUG(dbgs() << "LV: Analyzing interleaved accesses...\n");
   const ValueToValueMap &Strides = LAI->getSymbolicStrides();
 
   // Holds all accesses with a constant stride.
@@ -4672,7 +4691,8 @@ void InterleavedAccessInfo::analyzeInterleaving() {
     if (isStrided(DesB.Stride)) {
       Group = getInterleaveGroup(B);
       if (!Group) {
-        DEBUG(dbgs() << "LV: Creating an interleave group with:" << *B << '\n');
+        LLVM_DEBUG(dbgs() << "LV: Creating an interleave group with:" << *B
+                          << '\n');
         Group = createInterleaveGroup(B, DesB.Stride, DesB.Align);
       }
       if (B->mayWriteToMemory())
@@ -4775,8 +4795,9 @@ void InterleavedAccessInfo::analyzeInterleaving() {
 
       // Try to insert A into B's group.
       if (Group->insertMember(A, IndexA, DesA.Align)) {
-        DEBUG(dbgs() << "LV: Inserted:" << *A << '\n'
-                     << "    into the interleave group with" << *B << '\n');
+        LLVM_DEBUG(dbgs() << "LV: Inserted:" << *A << '\n'
+                          << "    into the interleave group with" << *B
+                          << '\n');
         InterleaveGroupMap[A] = Group;
 
         // Set the first load in program order as the insert position.
@@ -4789,8 +4810,9 @@ void InterleavedAccessInfo::analyzeInterleaving() {
   // Remove interleaved store groups with gaps.
   for (InterleaveGroup *Group : StoreGroups)
     if (Group->getNumMembers() != Group->getFactor()) {
-      DEBUG(dbgs() << "LV: Invalidate candidate interleaved store group due "
-                      "to gaps.\n");
+      LLVM_DEBUG(
+          dbgs() << "LV: Invalidate candidate interleaved store group due "
+                    "to gaps.\n");
       releaseGroup(Group);
     }
   // Remove interleaved groups with gaps (currently only loads) whose memory
@@ -4822,8 +4844,9 @@ void InterleavedAccessInfo::analyzeInterleaving() {
     Value *FirstMemberPtr = getLoadStorePointerOperand(Group->getMember(0));
     if (!getPtrStride(PSE, FirstMemberPtr, TheLoop, Strides, /*Assume=*/false,
                       /*ShouldCheckWrap=*/true)) {
-      DEBUG(dbgs() << "LV: Invalidate candidate interleaved group due to "
-                      "first group member potentially pointer-wrapping.\n");
+      LLVM_DEBUG(
+          dbgs() << "LV: Invalidate candidate interleaved group due to "
+                    "first group member potentially pointer-wrapping.\n");
       releaseGroup(Group);
       continue;
     }
@@ -4832,8 +4855,9 @@ void InterleavedAccessInfo::analyzeInterleaving() {
       Value *LastMemberPtr = getLoadStorePointerOperand(LastMember);
       if (!getPtrStride(PSE, LastMemberPtr, TheLoop, Strides, /*Assume=*/false,
                         /*ShouldCheckWrap=*/true)) {
-        DEBUG(dbgs() << "LV: Invalidate candidate interleaved group due to "
-                        "last group member potentially pointer-wrapping.\n");
+        LLVM_DEBUG(
+            dbgs() << "LV: Invalidate candidate interleaved group due to "
+                      "last group member potentially pointer-wrapping.\n");
         releaseGroup(Group);
       }
     } else {
@@ -4843,12 +4867,14 @@ void InterleavedAccessInfo::analyzeInterleaving() {
       // to look for a member at index factor - 1, since every group must have
       // a member at index zero.
       if (Group->isReverse()) {
-        DEBUG(dbgs() << "LV: Invalidate candidate interleaved group due to "
-                        "a reverse access with gaps.\n");
+        LLVM_DEBUG(
+            dbgs() << "LV: Invalidate candidate interleaved group due to "
+                      "a reverse access with gaps.\n");
         releaseGroup(Group);
         continue;
       }
-      DEBUG(dbgs() << "LV: Interleaved group requires epilogue iteration.\n");
+      LLVM_DEBUG(
+          dbgs() << "LV: Interleaved group requires epilogue iteration.\n");
       RequiresScalarEpilogue = true;
     }
   }
@@ -4858,7 +4884,8 @@ Optional<unsigned> LoopVectorizationCostModel::computeMaxVF(bool OptForSize) {
   if (Legal->getRuntimePointerChecking()->Need && TTI.hasBranchDivergence()) {
     // TODO: It may by useful to do since it's still likely to be dynamically
     // uniform if the target can skip.
-    DEBUG(dbgs() << "LV: Not inserting runtime ptr check for divergent target");
+    LLVM_DEBUG(
+        dbgs() << "LV: Not inserting runtime ptr check for divergent target");
 
     ORE->emit(
       createMissedAnalysis("CantVersionLoopWithDivergentTarget")
@@ -4876,20 +4903,22 @@ Optional<unsigned> LoopVectorizationCostModel::computeMaxVF(bool OptForSize) {
               << "runtime pointer checks needed. Enable vectorization of this "
                  "loop with '#pragma clang loop vectorize(enable)' when "
                  "compiling with -Os/-Oz");
-    DEBUG(dbgs()
-          << "LV: Aborting. Runtime ptr check is required with -Os/-Oz.\n");
+    LLVM_DEBUG(
+        dbgs()
+        << "LV: Aborting. Runtime ptr check is required with -Os/-Oz.\n");
     return None;
   }
 
   // If we optimize the program for size, avoid creating the tail loop.
-  DEBUG(dbgs() << "LV: Found trip count: " << TC << '\n');
+  LLVM_DEBUG(dbgs() << "LV: Found trip count: " << TC << '\n');
 
   // If we don't know the precise trip count, don't try to vectorize.
   if (TC < 2) {
     ORE->emit(
         createMissedAnalysis("UnknownLoopCountComplexCFG")
         << "unable to calculate the loop count due to complex control flow");
-    DEBUG(dbgs() << "LV: Aborting. A tail loop is required with -Os/-Oz.\n");
+    LLVM_DEBUG(
+        dbgs() << "LV: Aborting. A tail loop is required with -Os/-Oz.\n");
     return None;
   }
 
@@ -4907,7 +4936,8 @@ Optional<unsigned> LoopVectorizationCostModel::computeMaxVF(bool OptForSize) {
                  "same time. Enable vectorization of this loop "
                  "with '#pragma clang loop vectorize(enable)' "
                  "when compiling with -Os/-Oz");
-    DEBUG(dbgs() << "LV: Aborting. A tail loop is required with -Os/-Oz.\n");
+    LLVM_DEBUG(
+        dbgs() << "LV: Aborting. A tail loop is required with -Os/-Oz.\n");
     return None;
   }
 
@@ -4932,23 +4962,23 @@ LoopVectorizationCostModel::computeFeasibleMaxVF(bool OptForSize,
 
   unsigned MaxVectorSize = WidestRegister / WidestType;
 
-  DEBUG(dbgs() << "LV: The Smallest and Widest types: " << SmallestType << " / "
-               << WidestType << " bits.\n");
-  DEBUG(dbgs() << "LV: The Widest register safe to use is: " << WidestRegister
-               << " bits.\n");
+  LLVM_DEBUG(dbgs() << "LV: The Smallest and Widest types: " << SmallestType
+                    << " / " << WidestType << " bits.\n");
+  LLVM_DEBUG(dbgs() << "LV: The Widest register safe to use is: "
+                    << WidestRegister << " bits.\n");
 
   assert(MaxVectorSize <= 256 && "Did not expect to pack so many elements"
                                  " into one vector!");
   if (MaxVectorSize == 0) {
-    DEBUG(dbgs() << "LV: The target has no vector registers.\n");
+    LLVM_DEBUG(dbgs() << "LV: The target has no vector registers.\n");
     MaxVectorSize = 1;
     return MaxVectorSize;
   } else if (ConstTripCount && ConstTripCount < MaxVectorSize &&
              isPowerOf2_32(ConstTripCount)) {
     // We need to clamp the VF to be the ConstTripCount. There is no point in
     // choosing a higher viable VF as done in the loop below.
-    DEBUG(dbgs() << "LV: Clamping the MaxVF to the constant trip count: "
-                 << ConstTripCount << "\n");
+    LLVM_DEBUG(dbgs() << "LV: Clamping the MaxVF to the constant trip count: "
+                      << ConstTripCount << "\n");
     MaxVectorSize = ConstTripCount;
     return MaxVectorSize;
   }
@@ -4977,8 +5007,8 @@ LoopVectorizationCostModel::computeFeasibleMaxVF(bool OptForSize,
     }
     if (unsigned MinVF = TTI.getMinimumVF(SmallestType)) {
       if (MaxVF < MinVF) {
-        DEBUG(dbgs() << "LV: Overriding calculated MaxVF(" << MaxVF
-                     << ") with target's minimum: " << MinVF << '\n');
+        LLVM_DEBUG(dbgs() << "LV: Overriding calculated MaxVF(" << MaxVF
+                          << ") with target's minimum: " << MinVF << '\n');
         MaxVF = MinVF;
       }
     }
@@ -4991,13 +5021,14 @@ LoopVectorizationCostModel::selectVectorizationFactor(unsigned MaxVF) {
   float Cost = expectedCost(1).first;
   const float ScalarCost = Cost;
   unsigned Width = 1;
-  DEBUG(dbgs() << "LV: Scalar loop costs: " << (int)ScalarCost << ".\n");
+  LLVM_DEBUG(dbgs() << "LV: Scalar loop costs: " << (int)ScalarCost << ".\n");
 
   bool ForceVectorization = Hints->getForce() == LoopVectorizeHints::FK_Enabled;
-  // Ignore scalar width, because the user explicitly wants vectorization.
   if (ForceVectorization && MaxVF > 1) {
-    Width = 2;
-    Cost = expectedCost(Width).first / (float)Width;
+    // Ignore scalar width, because the user explicitly wants vectorization.
+    // Initialize cost to max so that VF = 2 is, at least, chosen during cost
+    // evaluation.
+    Cost = std::numeric_limits<float>::max();
   }
 
   for (unsigned i = 2; i <= MaxVF; i *= 2) {
@@ -5006,10 +5037,10 @@ LoopVectorizationCostModel::selectVectorizationFactor(unsigned MaxVF) {
     // the vector elements.
     VectorizationCostTy C = expectedCost(i);
     float VectorCost = C.first / (float)i;
-    DEBUG(dbgs() << "LV: Vector loop of width " << i
-                 << " costs: " << (int)VectorCost << ".\n");
+    LLVM_DEBUG(dbgs() << "LV: Vector loop of width " << i
+                      << " costs: " << (int)VectorCost << ".\n");
     if (!C.second && !ForceVectorization) {
-      DEBUG(
+      LLVM_DEBUG(
           dbgs() << "LV: Not considering vector loop of width " << i
                  << " because it will not generate any vector instructions.\n");
       continue;
@@ -5023,15 +5054,16 @@ LoopVectorizationCostModel::selectVectorizationFactor(unsigned MaxVF) {
   if (!EnableCondStoresVectorization && NumPredStores) {
     ORE->emit(createMissedAnalysis("ConditionalStore")
               << "store that is conditionally executed prevents vectorization");
-    DEBUG(dbgs() << "LV: No vectorization. There are conditional stores.\n");
+    LLVM_DEBUG(
+        dbgs() << "LV: No vectorization. There are conditional stores.\n");
     Width = 1;
     Cost = ScalarCost;
   }
 
-  DEBUG(if (ForceVectorization && Width > 1 && Cost >= ScalarCost) dbgs()
-        << "LV: Vectorization seems to be not beneficial, "
-        << "but was forced by a user.\n");
-  DEBUG(dbgs() << "LV: Selecting VF: " << Width << ".\n");
+  LLVM_DEBUG(if (ForceVectorization && Width > 1 && Cost >= ScalarCost) dbgs()
+             << "LV: Vectorization seems to be not beneficial, "
+             << "but was forced by a user.\n");
+  LLVM_DEBUG(dbgs() << "LV: Selecting VF: " << Width << ".\n");
   VectorizationFactor Factor = {Width, (unsigned)(Width * Cost)};
   return Factor;
 }
@@ -5123,8 +5155,8 @@ unsigned LoopVectorizationCostModel::selectInterleaveCount(bool OptForSize,
     return 1;
 
   unsigned TargetNumRegisters = TTI.getNumberOfRegisters(VF > 1);
-  DEBUG(dbgs() << "LV: The target has " << TargetNumRegisters
-               << " registers\n");
+  LLVM_DEBUG(dbgs() << "LV: The target has " << TargetNumRegisters
+                    << " registers\n");
 
   if (VF == 1) {
     if (ForceTargetNumScalarRegs.getNumOccurrences() > 0)
@@ -5182,7 +5214,7 @@ unsigned LoopVectorizationCostModel::selectInterleaveCount(bool OptForSize,
   // Interleave if we vectorized this loop and there is a reduction that could
   // benefit from interleaving.
   if (VF > 1 && !Legal->getReductionVars()->empty()) {
-    DEBUG(dbgs() << "LV: Interleaving because of reductions.\n");
+    LLVM_DEBUG(dbgs() << "LV: Interleaving because of reductions.\n");
     return IC;
   }
 
@@ -5193,7 +5225,7 @@ unsigned LoopVectorizationCostModel::selectInterleaveCount(bool OptForSize,
 
   // We want to interleave small loops in order to reduce the loop overhead and
   // potentially expose ILP opportunities.
-  DEBUG(dbgs() << "LV: Loop cost is " << LoopCost << '\n');
+  LLVM_DEBUG(dbgs() << "LV: Loop cost is " << LoopCost << '\n');
   if (!InterleavingRequiresRuntimePointerCheck && LoopCost < SmallLoopCost) {
     // We assume that the cost overhead is 1 and we use the cost model
     // to estimate the cost of the loop and interleave until the cost of the
@@ -5221,11 +5253,12 @@ unsigned LoopVectorizationCostModel::selectInterleaveCount(bool OptForSize,
 
     if (EnableLoadStoreRuntimeInterleave &&
         std::max(StoresIC, LoadsIC) > SmallIC) {
-      DEBUG(dbgs() << "LV: Interleaving to saturate store or load ports.\n");
+      LLVM_DEBUG(
+          dbgs() << "LV: Interleaving to saturate store or load ports.\n");
       return std::max(StoresIC, LoadsIC);
     }
 
-    DEBUG(dbgs() << "LV: Interleaving to reduce branch cost.\n");
+    LLVM_DEBUG(dbgs() << "LV: Interleaving to reduce branch cost.\n");
     return SmallIC;
   }
 
@@ -5233,11 +5266,11 @@ unsigned LoopVectorizationCostModel::selectInterleaveCount(bool OptForSize,
   // this point) that could benefit from interleaving.
   bool HasReductions = !Legal->getReductionVars()->empty();
   if (TTI.enableAggressiveInterleaving(HasReductions)) {
-    DEBUG(dbgs() << "LV: Interleaving to expose ILP.\n");
+    LLVM_DEBUG(dbgs() << "LV: Interleaving to expose ILP.\n");
     return IC;
   }
 
-  DEBUG(dbgs() << "LV: Not Interleaving.\n");
+  LLVM_DEBUG(dbgs() << "LV: Not Interleaving.\n");
   return 1;
 }
 
@@ -5275,7 +5308,7 @@ LoopVectorizationCostModel::calculateRegisterUsage(ArrayRef<unsigned> VFs) {
   // Marks the end of each interval.
   IntervalMap EndPoint;
   // Saves the list of instruction indices that are used in the loop.
-  SmallSet<Instruction *, 8> Ends;
+  SmallPtrSet<Instruction *, 8> Ends;
   // Saves the list of values that are used in the loop but are
   // defined outside the loop, such as arguments and constants.
   SmallPtrSet<Value *, 8> LoopInvariants;
@@ -5314,7 +5347,7 @@ LoopVectorizationCostModel::calculateRegisterUsage(ArrayRef<unsigned> VFs) {
   for (auto &Interval : EndPoint)
     TransposeEnds[Interval.second].push_back(Interval.first);
 
-  SmallSet<Instruction *, 8> OpenIntervals;
+  SmallPtrSet<Instruction *, 8> OpenIntervals;
 
   // Get the size of the widest register.
   unsigned MaxSafeDepDist = -1U;
@@ -5327,7 +5360,7 @@ LoopVectorizationCostModel::calculateRegisterUsage(ArrayRef<unsigned> VFs) {
   SmallVector<RegisterUsage, 8> RUs(VFs.size());
   SmallVector<unsigned, 8> MaxUsages(VFs.size(), 0);
 
-  DEBUG(dbgs() << "LV(REG): Calculating max register usage:\n");
+  LLVM_DEBUG(dbgs() << "LV(REG): Calculating max register usage:\n");
 
   // A lambda that gets the register usage for the given type and VF.
   auto GetRegUsage = [&DL, WidestRegister](Type *Ty, unsigned VF) {
@@ -5372,8 +5405,8 @@ LoopVectorizationCostModel::calculateRegisterUsage(ArrayRef<unsigned> VFs) {
       MaxUsages[j] = std::max(MaxUsages[j], RegUsage);
     }
 
-    DEBUG(dbgs() << "LV(REG): At #" << i << " Interval # "
-                 << OpenIntervals.size() << '\n');
+    LLVM_DEBUG(dbgs() << "LV(REG): At #" << i << " Interval # "
+                      << OpenIntervals.size() << '\n');
 
     // Add the current instruction to the list of open intervals.
     OpenIntervals.insert(I);
@@ -5388,9 +5421,10 @@ LoopVectorizationCostModel::calculateRegisterUsage(ArrayRef<unsigned> VFs) {
         Invariant += GetRegUsage(Inst->getType(), VFs[i]);
     }
 
-    DEBUG(dbgs() << "LV(REG): VF = " << VFs[i] << '\n');
-    DEBUG(dbgs() << "LV(REG): Found max usage: " << MaxUsages[i] << '\n');
-    DEBUG(dbgs() << "LV(REG): Found invariant usage: " << Invariant << '\n');
+    LLVM_DEBUG(dbgs() << "LV(REG): VF = " << VFs[i] << '\n');
+    LLVM_DEBUG(dbgs() << "LV(REG): Found max usage: " << MaxUsages[i] << '\n');
+    LLVM_DEBUG(dbgs() << "LV(REG): Found invariant usage: " << Invariant
+                      << '\n');
 
     RU.LoopInvariantRegs = Invariant;
     RU.MaxLocalUsers = MaxUsages[i];
@@ -5587,8 +5621,9 @@ LoopVectorizationCostModel::expectedCost(unsigned VF) {
 
       BlockCost.first += C.first;
       BlockCost.second |= C.second;
-      DEBUG(dbgs() << "LV: Found an estimated cost of " << C.first << " for VF "
-                   << VF << " For instruction: " << I << '\n');
+      LLVM_DEBUG(dbgs() << "LV: Found an estimated cost of " << C.first
+                        << " for VF " << VF << " For instruction: " << I
+                        << '\n');
     }
 
     // If we are vectorizing a predicated block, it will have been
@@ -6236,7 +6271,7 @@ void LoopVectorizationCostModel::collectValuesToIgnore() {
 VectorizationFactor
 LoopVectorizationPlanner::planInVPlanNativePath(bool OptForSize,
                                                 unsigned UserVF) {
-  // Width 1 means no vectorize, cost 0 means uncomputed cost.
+  // Width 1 means no vectorization, cost 0 means uncomputed cost.
   const VectorizationFactor NoVectorization = {1U, 0U};
 
   // Outer loop handling: They may require CFG and instruction level
@@ -6244,37 +6279,48 @@ LoopVectorizationPlanner::planInVPlanNativePath(bool OptForSize,
   // Since we cannot modify the incoming IR, we need to build VPlan upfront in
   // the vectorization pipeline.
   if (!OrigLoop->empty()) {
+    // TODO: If UserVF is not provided, we set UserVF to 4 for stress testing.
+    // This won't be necessary when UserVF is not required in the VPlan-native
+    // path.
+    if (VPlanBuildStressTest && !UserVF)
+      UserVF = 4;
+
     assert(EnableVPlanNativePath && "VPlan-native path is not enabled.");
     assert(UserVF && "Expected UserVF for outer loop vectorization.");
     assert(isPowerOf2_32(UserVF) && "VF needs to be a power of two");
-    DEBUG(dbgs() << "LV: Using user VF " << UserVF << ".\n");
+    LLVM_DEBUG(dbgs() << "LV: Using user VF " << UserVF << ".\n");
     buildVPlans(UserVF, UserVF);
+
+    // For VPlan build stress testing, we bail out after VPlan construction.
+    if (VPlanBuildStressTest)
+      return NoVectorization;
 
     return {UserVF, 0};
   }
 
-  DEBUG(dbgs() << "LV: Not vectorizing. Inner loops aren't supported in the "
-                  "VPlan-native path.\n");
+  LLVM_DEBUG(
+      dbgs() << "LV: Not vectorizing. Inner loops aren't supported in the "
+                "VPlan-native path.\n");
   return NoVectorization;
 }
 
 VectorizationFactor
 LoopVectorizationPlanner::plan(bool OptForSize, unsigned UserVF) {
   assert(OrigLoop->empty() && "Inner loop expected.");
-  // Width 1 means no vectorize, cost 0 means uncomputed cost.
+  // Width 1 means no vectorization, cost 0 means uncomputed cost.
   const VectorizationFactor NoVectorization = {1U, 0U};
   Optional<unsigned> MaybeMaxVF = CM.computeMaxVF(OptForSize);
   if (!MaybeMaxVF.hasValue()) // Cases considered too costly to vectorize.
     return NoVectorization;
 
   if (UserVF) {
-    DEBUG(dbgs() << "LV: Using user VF " << UserVF << ".\n");
+    LLVM_DEBUG(dbgs() << "LV: Using user VF " << UserVF << ".\n");
     assert(isPowerOf2_32(UserVF) && "VF needs to be a power of two");
     // Collect the instructions (and their associated costs) that will be more
     // profitable to scalarize.
     CM.selectUserVectorizationFactor(UserVF);
-    buildVPlans(UserVF, UserVF);
-    DEBUG(printPlans(dbgs()));
+    buildVPlansWithVPRecipes(UserVF, UserVF);
+    LLVM_DEBUG(printPlans(dbgs()));
     return {UserVF, 0};
   }
 
@@ -6291,8 +6337,8 @@ LoopVectorizationPlanner::plan(bool OptForSize, unsigned UserVF) {
       CM.collectInstsToScalarize(VF);
   }
 
-  buildVPlans(1, MaxVF);
-  DEBUG(printPlans(dbgs()));
+  buildVPlansWithVPRecipes(1, MaxVF);
+  LLVM_DEBUG(printPlans(dbgs()));
   if (MaxVF == 1)
     return NoVectorization;
 
@@ -6301,7 +6347,8 @@ LoopVectorizationPlanner::plan(bool OptForSize, unsigned UserVF) {
 }
 
 void LoopVectorizationPlanner::setBestPlan(unsigned VF, unsigned UF) {
-  DEBUG(dbgs() << "Setting best plan to VF=" << VF << ", UF=" << UF << '\n');
+  LLVM_DEBUG(dbgs() << "Setting best plan to VF=" << VF << ", UF=" << UF
+                    << '\n');
   BestVF = VF;
   BestUF = UF;
 
@@ -6451,30 +6498,15 @@ bool LoopVectorizationPlanner::getDecisionAndClampRange(
 /// vectorization decision can potentially shorten this sub-range during
 /// buildVPlan().
 void LoopVectorizationPlanner::buildVPlans(unsigned MinVF, unsigned MaxVF) {
-
-  // Collect conditions feeding internal conditional branches; they need to be
-  // represented in VPlan for it to model masking.
-  SmallPtrSet<Value *, 1> NeedDef;
-
-  auto *Latch = OrigLoop->getLoopLatch();
-  for (BasicBlock *BB : OrigLoop->blocks()) {
-    if (BB == Latch)
-      continue;
-    BranchInst *Branch = dyn_cast<BranchInst>(BB->getTerminator());
-    if (Branch && Branch->isConditional())
-      NeedDef.insert(Branch->getCondition());
-  }
-
   for (unsigned VF = MinVF; VF < MaxVF + 1;) {
     VFRange SubRange = {VF, MaxVF + 1};
-    VPlans.push_back(buildVPlan(SubRange, NeedDef));
+    VPlans.push_back(buildVPlan(SubRange));
     VF = SubRange.End;
   }
 }
 
-VPValue *LoopVectorizationPlanner::createEdgeMask(BasicBlock *Src,
-                                                  BasicBlock *Dst,
-                                                  VPlanPtr &Plan) {
+VPValue *VPRecipeBuilder::createEdgeMask(BasicBlock *Src, BasicBlock *Dst,
+                                         VPlanPtr &Plan) {
   assert(is_contained(predecessors(Dst), Src) && "Invalid edge");
 
   // Look for cached value.
@@ -6504,8 +6536,7 @@ VPValue *LoopVectorizationPlanner::createEdgeMask(BasicBlock *Src,
   return EdgeMaskCache[Edge] = EdgeMask;
 }
 
-VPValue *LoopVectorizationPlanner::createBlockInMask(BasicBlock *BB,
-                                                     VPlanPtr &Plan) {
+VPValue *VPRecipeBuilder::createBlockInMask(BasicBlock *BB, VPlanPtr &Plan) {
   assert(OrigLoop->contains(BB) && "Block is not a part of a loop");
 
   // Look for cached value.
@@ -6538,9 +6569,8 @@ VPValue *LoopVectorizationPlanner::createBlockInMask(BasicBlock *BB,
   return BlockMaskCache[BB] = BlockMask;
 }
 
-VPInterleaveRecipe *
-LoopVectorizationPlanner::tryToInterleaveMemory(Instruction *I,
-                                                VFRange &Range) {
+VPInterleaveRecipe *VPRecipeBuilder::tryToInterleaveMemory(Instruction *I,
+                                                           VFRange &Range) {
   const InterleaveGroup *IG = CM.getInterleavedAccessGroup(I);
   if (!IG)
     return nullptr;
@@ -6553,7 +6583,7 @@ LoopVectorizationPlanner::tryToInterleaveMemory(Instruction *I,
                   LoopVectorizationCostModel::CM_Interleave);
     };
   };
-  if (!getDecisionAndClampRange(isIGMember(I), Range))
+  if (!LoopVectorizationPlanner::getDecisionAndClampRange(isIGMember(I), Range))
     return nullptr;
 
   // I is a member of an InterleaveGroup for VF's in the (possibly trimmed)
@@ -6566,8 +6596,8 @@ LoopVectorizationPlanner::tryToInterleaveMemory(Instruction *I,
 }
 
 VPWidenMemoryInstructionRecipe *
-LoopVectorizationPlanner::tryToWidenMemory(Instruction *I, VFRange &Range,
-                                           VPlanPtr &Plan) {
+VPRecipeBuilder::tryToWidenMemory(Instruction *I, VFRange &Range,
+                                  VPlanPtr &Plan) {
   if (!isa<LoadInst>(I) && !isa<StoreInst>(I))
     return nullptr;
 
@@ -6586,7 +6616,7 @@ LoopVectorizationPlanner::tryToWidenMemory(Instruction *I, VFRange &Range,
     return Decision != LoopVectorizationCostModel::CM_Scalarize;
   };
 
-  if (!getDecisionAndClampRange(willWiden, Range))
+  if (!LoopVectorizationPlanner::getDecisionAndClampRange(willWiden, Range))
     return nullptr;
 
   VPValue *Mask = nullptr;
@@ -6597,8 +6627,7 @@ LoopVectorizationPlanner::tryToWidenMemory(Instruction *I, VFRange &Range,
 }
 
 VPWidenIntOrFpInductionRecipe *
-LoopVectorizationPlanner::tryToOptimizeInduction(Instruction *I,
-                                                 VFRange &Range) {
+VPRecipeBuilder::tryToOptimizeInduction(Instruction *I, VFRange &Range) {
   if (PHINode *Phi = dyn_cast<PHINode>(I)) {
     // Check if this is an integer or fp induction. If so, build the recipe that
     // produces its scalar and vector values.
@@ -6623,15 +6652,14 @@ LoopVectorizationPlanner::tryToOptimizeInduction(Instruction *I,
         [=](unsigned VF) -> bool { return CM.isOptimizableIVTruncate(K, VF); };
   };
 
-  if (isa<TruncInst>(I) &&
-      getDecisionAndClampRange(isOptimizableIVTruncate(I), Range))
+  if (isa<TruncInst>(I) && LoopVectorizationPlanner::getDecisionAndClampRange(
+                               isOptimizableIVTruncate(I), Range))
     return new VPWidenIntOrFpInductionRecipe(cast<PHINode>(I->getOperand(0)),
                                              cast<TruncInst>(I));
   return nullptr;
 }
 
-VPBlendRecipe *
-LoopVectorizationPlanner::tryToBlend(Instruction *I, VPlanPtr &Plan) {
+VPBlendRecipe *VPRecipeBuilder::tryToBlend(Instruction *I, VPlanPtr &Plan) {
   PHINode *Phi = dyn_cast<PHINode>(I);
   if (!Phi || Phi->getParent() == OrigLoop->getHeader())
     return nullptr;
@@ -6655,8 +6683,8 @@ LoopVectorizationPlanner::tryToBlend(Instruction *I, VPlanPtr &Plan) {
   return new VPBlendRecipe(Phi, Masks);
 }
 
-bool LoopVectorizationPlanner::tryToWiden(Instruction *I, VPBasicBlock *VPBB,
-                                          VFRange &Range) {
+bool VPRecipeBuilder::tryToWiden(Instruction *I, VPBasicBlock *VPBB,
+                                 VFRange &Range) {
   if (CM.isScalarWithPredication(I))
     return false;
 
@@ -6741,7 +6769,7 @@ bool LoopVectorizationPlanner::tryToWiden(Instruction *I, VPBasicBlock *VPBB,
     return true;
   };
 
-  if (!getDecisionAndClampRange(willWiden, Range))
+  if (!LoopVectorizationPlanner::getDecisionAndClampRange(willWiden, Range))
     return false;
 
   // Success: widen this instruction. We optimize the common case where
@@ -6756,11 +6784,11 @@ bool LoopVectorizationPlanner::tryToWiden(Instruction *I, VPBasicBlock *VPBB,
   return true;
 }
 
-VPBasicBlock *LoopVectorizationPlanner::handleReplication(
+VPBasicBlock *VPRecipeBuilder::handleReplication(
     Instruction *I, VFRange &Range, VPBasicBlock *VPBB,
     DenseMap<Instruction *, VPReplicateRecipe *> &PredInst2Recipe,
     VPlanPtr &Plan) {
-  bool IsUniform = getDecisionAndClampRange(
+  bool IsUniform = LoopVectorizationPlanner::getDecisionAndClampRange(
       [&](unsigned VF) { return CM.isUniformAfterVectorization(I, VF); },
       Range);
 
@@ -6777,24 +6805,25 @@ VPBasicBlock *LoopVectorizationPlanner::handleReplication(
 
   // Finalize the recipe for Instr, first if it is not predicated.
   if (!IsPredicated) {
-    DEBUG(dbgs() << "LV: Scalarizing:" << *I << "\n");
+    LLVM_DEBUG(dbgs() << "LV: Scalarizing:" << *I << "\n");
     VPBB->appendRecipe(Recipe);
     return VPBB;
   }
-  DEBUG(dbgs() << "LV: Scalarizing and predicating:" << *I << "\n");
+  LLVM_DEBUG(dbgs() << "LV: Scalarizing and predicating:" << *I << "\n");
   assert(VPBB->getSuccessors().empty() &&
          "VPBB has successors when handling predicated replication.");
   // Record predicated instructions for above packing optimizations.
   PredInst2Recipe[I] = Recipe;
-  VPBlockBase *Region =
-    VPBB->setOneSuccessor(createReplicateRegion(I, Recipe, Plan));
-  return cast<VPBasicBlock>(Region->setOneSuccessor(new VPBasicBlock()));
+  VPBlockBase *Region = createReplicateRegion(I, Recipe, Plan);
+  VPBlockUtils::insertBlockAfter(Region, VPBB);
+  auto *RegSucc = new VPBasicBlock();
+  VPBlockUtils::insertBlockAfter(RegSucc, Region);
+  return RegSucc;
 }
 
-VPRegionBlock *
-LoopVectorizationPlanner::createReplicateRegion(Instruction *Instr,
-                                                VPRecipeBase *PredRecipe,
-                                                VPlanPtr &Plan) {
+VPRegionBlock *VPRecipeBuilder::createReplicateRegion(Instruction *Instr,
+                                                      VPRecipeBase *PredRecipe,
+                                                      VPlanPtr &Plan) {
   // Instructions marked for predication are replicated and placed under an
   // if-then construct to prevent side-effects.
 
@@ -6814,32 +6843,67 @@ LoopVectorizationPlanner::createReplicateRegion(Instruction *Instr,
 
   // Note: first set Entry as region entry and then connect successors starting
   // from it in order, to propagate the "parent" of each VPBasicBlock.
-  Entry->setTwoSuccessors(Pred, Exit);
-  Pred->setOneSuccessor(Exit);
+  VPBlockUtils::insertTwoBlocksAfter(Pred, Exit, Entry);
+  VPBlockUtils::connectBlocks(Pred, Exit);
 
   return Region;
 }
 
-LoopVectorizationPlanner::VPlanPtr
-LoopVectorizationPlanner::buildVPlan(VFRange &Range,
-                                     const SmallPtrSetImpl<Value *> &NeedDef) {
-  // Outer loop handling: They may require CFG and instruction level
-  // transformations before even evaluating whether vectorization is profitable.
-  // Since we cannot modify the incoming IR, we need to build VPlan upfront in
-  // the vectorization pipeline.
-  if (!OrigLoop->empty()) {
-    assert(EnableVPlanNativePath && "VPlan-native path is not enabled.");
-
-    // Create new empty VPlan
-    auto Plan = llvm::make_unique<VPlan>();
-    return Plan;
+bool VPRecipeBuilder::tryToCreateRecipe(Instruction *Instr, VFRange &Range,
+                                        VPlanPtr &Plan, VPBasicBlock *VPBB) {
+  VPRecipeBase *Recipe = nullptr;
+  // Check if Instr should belong to an interleave memory recipe, or already
+  // does. In the latter case Instr is irrelevant.
+  if ((Recipe = tryToInterleaveMemory(Instr, Range))) {
+    VPBB->appendRecipe(Recipe);
+    return true;
   }
 
+  // Check if Instr is a memory operation that should be widened.
+  if ((Recipe = tryToWidenMemory(Instr, Range, Plan))) {
+    VPBB->appendRecipe(Recipe);
+    return true;
+  }
+
+  // Check if Instr should form some PHI recipe.
+  if ((Recipe = tryToOptimizeInduction(Instr, Range))) {
+    VPBB->appendRecipe(Recipe);
+    return true;
+  }
+  if ((Recipe = tryToBlend(Instr, Plan))) {
+    VPBB->appendRecipe(Recipe);
+    return true;
+  }
+  if (PHINode *Phi = dyn_cast<PHINode>(Instr)) {
+    VPBB->appendRecipe(new VPWidenPHIRecipe(Phi));
+    return true;
+  }
+
+  // Check if Instr is to be widened by a general VPWidenRecipe, after
+  // having first checked for specific widening recipes that deal with
+  // Interleave Groups, Inductions and Phi nodes.
+  if (tryToWiden(Instr, VPBB, Range))
+    return true;
+
+  return false;
+}
+
+void LoopVectorizationPlanner::buildVPlansWithVPRecipes(unsigned MinVF,
+                                                        unsigned MaxVF) {
   assert(OrigLoop->empty() && "Inner loop expected.");
-  EdgeMaskCache.clear();
-  BlockMaskCache.clear();
-  DenseMap<Instruction *, Instruction *> &SinkAfter = Legal->getSinkAfter();
-  DenseMap<Instruction *, Instruction *> SinkAfterInverse;
+
+  // Collect conditions feeding internal conditional branches; they need to be
+  // represented in VPlan for it to model masking.
+  SmallPtrSet<Value *, 1> NeedDef;
+
+  auto *Latch = OrigLoop->getLoopLatch();
+  for (BasicBlock *BB : OrigLoop->blocks()) {
+    if (BB == Latch)
+      continue;
+    BranchInst *Branch = dyn_cast<BranchInst>(BB->getTerminator());
+    if (Branch && Branch->isConditional())
+      NeedDef.insert(Branch->getCondition());
+  }
 
   // Collect instructions from the original loop that will become trivially dead
   // in the vectorized loop. We don't need to vectorize these instructions. For
@@ -6850,15 +6914,31 @@ LoopVectorizationPlanner::buildVPlan(VFRange &Range,
   SmallPtrSet<Instruction *, 4> DeadInstructions;
   collectTriviallyDeadInstructions(DeadInstructions);
 
+  for (unsigned VF = MinVF; VF < MaxVF + 1;) {
+    VFRange SubRange = {VF, MaxVF + 1};
+    VPlans.push_back(
+        buildVPlanWithVPRecipes(SubRange, NeedDef, DeadInstructions));
+    VF = SubRange.End;
+  }
+}
+
+LoopVectorizationPlanner::VPlanPtr
+LoopVectorizationPlanner::buildVPlanWithVPRecipes(
+    VFRange &Range, SmallPtrSetImpl<Value *> &NeedDef,
+    SmallPtrSetImpl<Instruction *> &DeadInstructions) {
   // Hold a mapping from predicated instructions to their recipes, in order to
   // fix their AlsoPack behavior if a user is determined to replicate and use a
   // scalar instead of vector value.
   DenseMap<Instruction *, VPReplicateRecipe *> PredInst2Recipe;
 
+  DenseMap<Instruction *, Instruction *> &SinkAfter = Legal->getSinkAfter();
+  DenseMap<Instruction *, Instruction *> SinkAfterInverse;
+
   // Create a dummy pre-entry VPBasicBlock to start building the VPlan.
   VPBasicBlock *VPBB = new VPBasicBlock("Pre-Entry");
   auto Plan = llvm::make_unique<VPlan>(VPBB);
 
+  VPRecipeBuilder RecipeBuilder(OrigLoop, TLI, TTI, Legal, CM, Builder);
   // Represent values that will have defs inside VPlan.
   for (Value *V : NeedDef)
     Plan->addVPValue(V);
@@ -6873,7 +6953,7 @@ LoopVectorizationPlanner::buildVPlan(VFRange &Range,
     // ingredients and fill a new VPBasicBlock.
     unsigned VPBBsForBB = 0;
     auto *FirstVPBBForBB = new VPBasicBlock(BB->getName());
-    VPBB->setOneSuccessor(FirstVPBBForBB);
+    VPBlockUtils::insertBlockAfter(FirstVPBBForBB, VPBB);
     VPBB = FirstVPBBForBB;
     Builder.setInsertPoint(VPBB);
 
@@ -6906,8 +6986,9 @@ LoopVectorizationPlanner::buildVPlan(VFRange &Range,
       // should follow.
       auto SAIt = SinkAfter.find(Instr);
       if (SAIt != SinkAfter.end()) {
-        DEBUG(dbgs() << "Sinking" << *SAIt->first << " after" << *SAIt->second
-                     << " to vectorize a 1st order recurrence.\n");
+        LLVM_DEBUG(dbgs() << "Sinking" << *SAIt->first << " after"
+                          << *SAIt->second
+                          << " to vectorize a 1st order recurrence.\n");
         SinkAfterInverse[SAIt->second] = Instr;
         continue;
       }
@@ -6923,45 +7004,13 @@ LoopVectorizationPlanner::buildVPlan(VFRange &Range,
 
     // Introduce each ingredient into VPlan.
     for (Instruction *Instr : Ingredients) {
-      VPRecipeBase *Recipe = nullptr;
-
-      // Check if Instr should belong to an interleave memory recipe, or already
-      // does. In the latter case Instr is irrelevant.
-      if ((Recipe = tryToInterleaveMemory(Instr, Range))) {
-        VPBB->appendRecipe(Recipe);
-        continue;
-      }
-
-      // Check if Instr is a memory operation that should be widened.
-      if ((Recipe = tryToWidenMemory(Instr, Range, Plan))) {
-        VPBB->appendRecipe(Recipe);
-        continue;
-      }
-
-      // Check if Instr should form some PHI recipe.
-      if ((Recipe = tryToOptimizeInduction(Instr, Range))) {
-        VPBB->appendRecipe(Recipe);
-        continue;
-      }
-      if ((Recipe = tryToBlend(Instr, Plan))) {
-        VPBB->appendRecipe(Recipe);
-        continue;
-      }
-      if (PHINode *Phi = dyn_cast<PHINode>(Instr)) {
-        VPBB->appendRecipe(new VPWidenPHIRecipe(Phi));
-        continue;
-      }
-
-      // Check if Instr is to be widened by a general VPWidenRecipe, after
-      // having first checked for specific widening recipes that deal with
-      // Interleave Groups, Inductions and Phi nodes.
-      if (tryToWiden(Instr, VPBB, Range))
+      if (RecipeBuilder.tryToCreateRecipe(Instr, Range, Plan, VPBB))
         continue;
 
       // Otherwise, if all widening options failed, Instruction is to be
       // replicated. This may create a successor for VPBB.
-      VPBasicBlock *NextVPBB =
-        handleReplication(Instr, Range, VPBB, PredInst2Recipe, Plan);
+      VPBasicBlock *NextVPBB = RecipeBuilder.handleReplication(
+          Instr, Range, VPBB, PredInst2Recipe, Plan);
       if (NextVPBB != VPBB) {
         VPBB = NextVPBB;
         VPBB->setName(BB->hasName() ? BB->getName() + "." + Twine(VPBBsForBB++)
@@ -6976,7 +7025,7 @@ LoopVectorizationPlanner::buildVPlan(VFRange &Range,
   VPBasicBlock *PreEntry = cast<VPBasicBlock>(Plan->getEntry());
   assert(PreEntry->empty() && "Expecting empty pre-entry block.");
   VPBlockBase *Entry = Plan->setEntry(PreEntry->getSingleSuccessor());
-  PreEntry->disconnectSuccessor(Entry);
+  VPBlockUtils::disconnectBlocks(PreEntry, Entry);
   delete PreEntry;
 
   std::string PlanName;
@@ -6991,6 +7040,25 @@ LoopVectorizationPlanner::buildVPlan(VFRange &Range,
   RSO << "},UF>=1";
   RSO.flush();
   Plan->setName(PlanName);
+
+  return Plan;
+}
+
+LoopVectorizationPlanner::VPlanPtr
+LoopVectorizationPlanner::buildVPlan(VFRange &Range) {
+  // Outer loop handling: They may require CFG and instruction level
+  // transformations before even evaluating whether vectorization is profitable.
+  // Since we cannot modify the incoming IR, we need to build VPlan upfront in
+  // the vectorization pipeline.
+  assert(!OrigLoop->empty());
+  assert(EnableVPlanNativePath && "VPlan-native path is not enabled.");
+
+  // Create new empty VPlan
+  auto Plan = llvm::make_unique<VPlan>();
+
+  // Build hierarchical CFG
+  VPlanHCFGBuilder HCFGBuilder(OrigLoop, LI);
+  HCFGBuilder.buildHierarchicalCFG(*Plan.get());
 
   return Plan;
 }
@@ -7208,21 +7276,22 @@ bool LoopVectorizePass::processLoop(Loop *L) {
   const std::string DebugLocStr = getDebugLocString(L);
 #endif /* NDEBUG */
 
-  DEBUG(dbgs() << "\nLV: Checking a loop in \""
-               << L->getHeader()->getParent()->getName() << "\" from "
-               << DebugLocStr << "\n");
+  LLVM_DEBUG(dbgs() << "\nLV: Checking a loop in \""
+                    << L->getHeader()->getParent()->getName() << "\" from "
+                    << DebugLocStr << "\n");
 
   LoopVectorizeHints Hints(L, DisableUnrolling, *ORE);
 
-  DEBUG(dbgs() << "LV: Loop hints:"
-               << " force="
-               << (Hints.getForce() == LoopVectorizeHints::FK_Disabled
-                       ? "disabled"
-                       : (Hints.getForce() == LoopVectorizeHints::FK_Enabled
-                              ? "enabled"
-                              : "?"))
-               << " width=" << Hints.getWidth()
-               << " unroll=" << Hints.getInterleave() << "\n");
+  LLVM_DEBUG(
+      dbgs() << "LV: Loop hints:"
+             << " force="
+             << (Hints.getForce() == LoopVectorizeHints::FK_Disabled
+                     ? "disabled"
+                     : (Hints.getForce() == LoopVectorizeHints::FK_Enabled
+                            ? "enabled"
+                            : "?"))
+             << " width=" << Hints.getWidth()
+             << " unroll=" << Hints.getInterleave() << "\n");
 
   // Function containing loop
   Function *F = L->getHeader()->getParent();
@@ -7236,7 +7305,7 @@ bool LoopVectorizePass::processLoop(Loop *L) {
   // benefit from vectorization, respectively.
 
   if (!Hints.allowVectorization(F, L, AlwaysVectorize)) {
-    DEBUG(dbgs() << "LV: Loop hints prevent vectorization.\n");
+    LLVM_DEBUG(dbgs() << "LV: Loop hints prevent vectorization.\n");
     return false;
   }
 
@@ -7247,7 +7316,7 @@ bool LoopVectorizePass::processLoop(Loop *L) {
   LoopVectorizationLegality LVL(L, PSE, DT, TLI, AA, F, GetLAA, LI, ORE,
                                 &Requirements, &Hints, DB, AC);
   if (!LVL.canVectorize(EnableVPlanNativePath)) {
-    DEBUG(dbgs() << "LV: Not vectorizing: Cannot prove legality.\n");
+    LLVM_DEBUG(dbgs() << "LV: Not vectorizing: Cannot prove legality.\n");
     emitMissedWarning(F, L, Hints, ORE);
     return false;
   }
@@ -7297,13 +7366,13 @@ bool LoopVectorizePass::processLoop(Loop *L) {
   }
 
   if (HasExpectedTC && ExpectedTC < TinyTripCountVectorThreshold) {
-    DEBUG(dbgs() << "LV: Found a loop with a very small trip count. "
-                 << "This loop is worth vectorizing only if no scalar "
-                 << "iteration overheads are incurred.");
+    LLVM_DEBUG(dbgs() << "LV: Found a loop with a very small trip count. "
+                      << "This loop is worth vectorizing only if no scalar "
+                      << "iteration overheads are incurred.");
     if (Hints.getForce() == LoopVectorizeHints::FK_Enabled)
-      DEBUG(dbgs() << " But vectorizing was explicitly forced.\n");
+      LLVM_DEBUG(dbgs() << " But vectorizing was explicitly forced.\n");
     else {
-      DEBUG(dbgs() << "\n");
+      LLVM_DEBUG(dbgs() << "\n");
       // Loops with a very small trip count are considered for vectorization
       // under OptForSize, thereby making sure the cost of their loop body is
       // dominant, free of runtime guards and scalar iteration overheads.
@@ -7316,8 +7385,8 @@ bool LoopVectorizePass::processLoop(Loop *L) {
   // an integer loop and the vector instructions selected are purely integer
   // vector instructions?
   if (F->hasFnAttribute(Attribute::NoImplicitFloat)) {
-    DEBUG(dbgs() << "LV: Can't vectorize when the NoImplicitFloat"
-                    "attribute is used.\n");
+    LLVM_DEBUG(dbgs() << "LV: Can't vectorize when the NoImplicitFloat"
+                         "attribute is used.\n");
     ORE->emit(createLVMissedAnalysis(Hints.vectorizeAnalysisPassName(),
                                      "NoImplicitFloat", L)
               << "loop not vectorized due to NoImplicitFloat attribute");
@@ -7331,7 +7400,8 @@ bool LoopVectorizePass::processLoop(Loop *L) {
   // additional fp-math flags can help.
   if (Hints.isPotentiallyUnsafe() &&
       TTI->isFPVectorizationPotentiallyUnsafe()) {
-    DEBUG(dbgs() << "LV: Potentially unsafe FP op prevents vectorization.\n");
+    LLVM_DEBUG(
+        dbgs() << "LV: Potentially unsafe FP op prevents vectorization.\n");
     ORE->emit(
         createLVMissedAnalysis(Hints.vectorizeAnalysisPassName(), "UnsafeFP", L)
         << "loop not vectorized due to unsafe FP support.");
@@ -7375,14 +7445,14 @@ bool LoopVectorizePass::processLoop(Loop *L) {
   std::pair<StringRef, std::string> VecDiagMsg, IntDiagMsg;
   bool VectorizeLoop = true, InterleaveLoop = true;
   if (Requirements.doesNotMeet(F, L, Hints)) {
-    DEBUG(dbgs() << "LV: Not vectorizing: loop did not meet vectorization "
-                    "requirements.\n");
+    LLVM_DEBUG(dbgs() << "LV: Not vectorizing: loop did not meet vectorization "
+                         "requirements.\n");
     emitMissedWarning(F, L, Hints, ORE);
     return false;
   }
 
   if (VF.Width == 1) {
-    DEBUG(dbgs() << "LV: Vectorization is possible but not beneficial.\n");
+    LLVM_DEBUG(dbgs() << "LV: Vectorization is possible but not beneficial.\n");
     VecDiagMsg = std::make_pair(
         "VectorizationNotBeneficial",
         "the cost-model indicates that vectorization is not beneficial");
@@ -7391,7 +7461,7 @@ bool LoopVectorizePass::processLoop(Loop *L) {
 
   if (IC == 1 && UserIC <= 1) {
     // Tell the user interleaving is not beneficial.
-    DEBUG(dbgs() << "LV: Interleaving is not beneficial.\n");
+    LLVM_DEBUG(dbgs() << "LV: Interleaving is not beneficial.\n");
     IntDiagMsg = std::make_pair(
         "InterleavingNotBeneficial",
         "the cost-model indicates that interleaving is not beneficial");
@@ -7403,8 +7473,8 @@ bool LoopVectorizePass::processLoop(Loop *L) {
     }
   } else if (IC > 1 && UserIC == 1) {
     // Tell the user interleaving is beneficial, but it explicitly disabled.
-    DEBUG(dbgs()
-          << "LV: Interleaving is beneficial but is explicitly disabled.");
+    LLVM_DEBUG(
+        dbgs() << "LV: Interleaving is beneficial but is explicitly disabled.");
     IntDiagMsg = std::make_pair(
         "InterleavingBeneficialButDisabled",
         "the cost-model indicates that interleaving is beneficial "
@@ -7431,24 +7501,24 @@ bool LoopVectorizePass::processLoop(Loop *L) {
     });
     return false;
   } else if (!VectorizeLoop && InterleaveLoop) {
-    DEBUG(dbgs() << "LV: Interleave Count is " << IC << '\n');
+    LLVM_DEBUG(dbgs() << "LV: Interleave Count is " << IC << '\n');
     ORE->emit([&]() {
       return OptimizationRemarkAnalysis(VAPassName, VecDiagMsg.first,
                                         L->getStartLoc(), L->getHeader())
              << VecDiagMsg.second;
     });
   } else if (VectorizeLoop && !InterleaveLoop) {
-    DEBUG(dbgs() << "LV: Found a vectorizable loop (" << VF.Width << ") in "
-                 << DebugLocStr << '\n');
+    LLVM_DEBUG(dbgs() << "LV: Found a vectorizable loop (" << VF.Width
+                      << ") in " << DebugLocStr << '\n');
     ORE->emit([&]() {
       return OptimizationRemarkAnalysis(LV_NAME, IntDiagMsg.first,
                                         L->getStartLoc(), L->getHeader())
              << IntDiagMsg.second;
     });
   } else if (VectorizeLoop && InterleaveLoop) {
-    DEBUG(dbgs() << "LV: Found a vectorizable loop (" << VF.Width << ") in "
-                 << DebugLocStr << '\n');
-    DEBUG(dbgs() << "LV: Interleave Count is " << IC << '\n');
+    LLVM_DEBUG(dbgs() << "LV: Found a vectorizable loop (" << VF.Width
+                      << ") in " << DebugLocStr << '\n');
+    LLVM_DEBUG(dbgs() << "LV: Interleave Count is " << IC << '\n');
   }
 
   LVP.setBestPlan(VF.Width, IC);
@@ -7495,7 +7565,7 @@ bool LoopVectorizePass::processLoop(Loop *L) {
   // Mark the loop as already vectorized to avoid vectorizing again.
   Hints.setAlreadyVectorized();
 
-  DEBUG(verifyFunction(*L->getHeader()->getParent()));
+  LLVM_DEBUG(verifyFunction(*L->getHeader()->getParent()));
   return true;
 }
 

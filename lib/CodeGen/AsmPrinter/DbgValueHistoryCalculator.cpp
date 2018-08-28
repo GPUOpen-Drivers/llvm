@@ -50,8 +50,8 @@ void DbgValueHistoryMap::startInstrRange(InlinedVariable Var,
   auto &Ranges = VarInstrRanges[Var];
   if (!Ranges.empty() && Ranges.back().second == nullptr &&
       Ranges.back().first->isIdenticalTo(MI)) {
-    DEBUG(dbgs() << "Coalescing identical DBG_VALUE entries:\n"
-                 << "\t" << Ranges.back().first << "\t" << MI << "\n");
+    LLVM_DEBUG(dbgs() << "Coalescing identical DBG_VALUE entries:\n"
+                      << "\t" << Ranges.back().first << "\t" << MI << "\n");
     return;
   }
   Ranges.push_back(std::make_pair(&MI, nullptr));
@@ -269,3 +269,33 @@ void llvm::calculateDbgValueHistory(const MachineFunction *MF,
     }
   }
 }
+
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
+LLVM_DUMP_METHOD void DbgValueHistoryMap::dump() const {
+  dbgs() << "DbgValueHistoryMap:\n";
+  for (const auto &VarRangePair : *this) {
+    const InlinedVariable &Var = VarRangePair.first;
+    const InstrRanges &Ranges = VarRangePair.second;
+
+    const DILocalVariable *LocalVar = Var.first;
+    const DILocation *Location = Var.second;
+
+    dbgs() << " - " << LocalVar->getName() << " at ";
+
+    if (Location)
+      dbgs() << Location->getFilename() << ":" << Location->getLine() << ":"
+             << Location->getColumn();
+    else
+      dbgs() << "<unknown location>";
+
+    dbgs() << " --\n";
+
+    for (const InstrRange &Range : Ranges) {
+      dbgs() << "   Begin: " << *Range.first;
+      if (Range.second)
+        dbgs() << "   End  : " << *Range.second;
+      dbgs() << "\n";
+    }
+  }
+}
+#endif

@@ -129,7 +129,7 @@ let Uses = [RM] in {
     def LXSDX : XX1Form_memOp<31, 588,
                         (outs vsfrc:$XT), (ins memrr:$src),
                         "lxsdx $XT, $src", IIC_LdStLFD,
-                        [(set f64:$XT, (load xoaddr:$src))]>;
+                        []>;
 
     // Pseudo instruction XFLOADf64 will be expanded to LXSDX or LFDX later
     let isPseudo = 1, CodeSize = 3 in
@@ -160,7 +160,7 @@ let Uses = [RM] in {
     def STXSDX : XX1Form_memOp<31, 716,
                         (outs), (ins vsfrc:$XT, memrr:$dst),
                         "stxsdx $XT, $dst", IIC_LdStSTFD,
-                        [(store f64:$XT, xoaddr:$dst)]>;
+                        []>;
 
     // Pseudo instruction XFSTOREf64  will be expanded to STXSDX or STFDX later
     let isPseudo = 1, CodeSize = 3 in
@@ -1326,6 +1326,9 @@ let AddedComplexity = 400 in { // Prefer VSX patterns over non-VSX patterns.
                         (outs vssrc:$XT), (ins vssrc:$XB),
                         "xsresp $XT, $XB", IIC_VecFP,
                         [(set f32:$XT, (PPCfre f32:$XB))]>;
+  def XSRSP : XX2Form<60, 281,
+                        (outs vssrc:$XT), (ins vsfrc:$XB),
+                        "xsrsp $XT, $XB", IIC_VecFP, []>;
   def XSSQRTSP : XX2Form<60, 11,
                         (outs vssrc:$XT), (ins vssrc:$XB),
                         "xssqrtsp $XT, $XB", IIC_FPSqrtS,
@@ -2370,6 +2373,17 @@ let AddedComplexity = 400, Predicates = [HasP9Vector] in {
     : X_RD5_XO5_RS5<opcode, xo2, xo, (outs vrrc:$vT), (ins vbtype:$vB),
                     !strconcat(opc, " $vT, $vB"), IIC_VecFP, pattern>;
 
+  // [PO VRT XO VRB XO /]
+  class X_VT5_XO5_VB5_VSFR<bits<6> opcode, bits<5> xo2, bits<10> xo, string opc,
+                      list<dag> pattern>
+    : X_RD5_XO5_RS5<opcode, xo2, xo, (outs vfrc:$vT), (ins vrrc:$vB),
+                    !strconcat(opc, " $vT, $vB"), IIC_VecFP, pattern>;
+
+  // [PO VRT XO VRB XO RO], Round to Odd version of [PO VRT XO VRB XO /]
+  class X_VT5_XO5_VB5_VSFR_Ro<bits<6> opcode, bits<5> xo2, bits<10> xo, string opc,
+                         list<dag> pattern>
+    : X_VT5_XO5_VB5_VSFR<opcode, xo2, xo, opc, pattern>, isDOT;
+
   let UseVSXReg = 1 in {
   // [PO T XO B XO BX /]
   class XX2_RT5_XO5_XB6<bits<6> opcode, bits<5> xo2, bits<9> xo, string opc,
@@ -2517,12 +2531,12 @@ let AddedComplexity = 400, Predicates = [HasP9Vector] in {
   // Quad-Precision Floating-Point Conversion Instructions:
 
   // Convert DP -> QP
-  def XSCVDPQP  : X_VT5_XO5_VB5_TyVB<63, 22, 836, "xscvdpqp", vfrc, []>;
-  def : Pat<(f128 (fpextend f64:$src)), (f128 (XSCVDPQP $src))>;
+  def XSCVDPQP  : X_VT5_XO5_VB5_TyVB<63, 22, 836, "xscvdpqp", vfrc,
+                                     [(set f128:$vT, (fpextend f64:$vB))]>;
 
   // Round & Convert QP -> DP (dword[1] is set to zero)
-  def XSCVQPDP  : X_VT5_XO5_VB5   <63, 20, 836, "xscvqpdp" , []>;
-  def XSCVQPDPO : X_VT5_XO5_VB5_Ro<63, 20, 836, "xscvqpdpo", []>;
+  def XSCVQPDP  : X_VT5_XO5_VB5_VSFR<63, 20, 836, "xscvqpdp" , []>;
+  def XSCVQPDPO : X_VT5_XO5_VB5_VSFR_Ro<63, 20, 836, "xscvqpdpo", []>;
 
   // Truncate & Convert QP -> (Un)Signed (D)Word (dword[1] is set to zero)
   def XSCVQPSDZ : X_VT5_XO5_VB5<63, 25, 836, "xscvqpsdz", []>;
@@ -2534,9 +2548,16 @@ let AddedComplexity = 400, Predicates = [HasP9Vector] in {
   def XSCVSDQP  : X_VT5_XO5_VB5_TyVB<63, 10, 836, "xscvsdqp", vfrc, []>;
   def : Pat<(f128 (sint_to_fp i64:$src)),
             (f128 (XSCVSDQP (COPY_TO_REGCLASS $src, VFRC)))>;
+  def : Pat<(f128 (sint_to_fp (i64 (PPCmfvsr f64:$src)))),
+            (f128 (XSCVSDQP $src))>;
+  def : Pat<(f128 (sint_to_fp (i32 (PPCmfvsr f64:$src)))),
+            (f128 (XSCVSDQP (VEXTSW2Ds $src)))>;
+
   def XSCVUDQP  : X_VT5_XO5_VB5_TyVB<63,  2, 836, "xscvudqp", vfrc, []>;
   def : Pat<(f128 (uint_to_fp i64:$src)),
             (f128 (XSCVUDQP (COPY_TO_REGCLASS $src, VFRC)))>;
+  def : Pat<(f128 (uint_to_fp (i64 (PPCmfvsr f64:$src)))),
+            (f128 (XSCVUDQP $src))>;
 
   // Convert (Un)Signed Word -> QP.
   def : Pat<(f128 (sint_to_fp i32:$src)),
@@ -2575,7 +2596,7 @@ let AddedComplexity = 400, Predicates = [HasP9Vector] in {
 
   class Z23_VT5_R1_VB5_RMC2_EX1<bits<6> opcode, bits<8> xo, bit ex, string opc,
                                 list<dag> pattern>
-    : Z23Form_1<opcode, xo,
+    : Z23Form_8<opcode, xo,
                 (outs vrrc:$vT), (ins u1imm:$r, vrrc:$vB, u2imm:$rmc),
                 !strconcat(opc, " $r, $vT, $vB, $rmc"), IIC_VecFP, pattern> {
     let RC = ex;
@@ -3152,6 +3173,138 @@ let AddedComplexity = 400, Predicates = [HasP9Vector] in {
   def : Pat<(f32 (fpround (f64 (extloadf32 ixaddr:$src)))),
             (f32 (DFLOADf32 ixaddr:$src))>;
 
+  let Predicates = [IsBigEndian, HasP9Vector] in {
+
+    // (Un)Signed DWord vector extract -> QP
+    def : Pat<(f128 (sint_to_fp (i64 (extractelt v2i64:$src, 0)))),
+              (f128 (XSCVSDQP (COPY_TO_REGCLASS $src, VFRC)))>;
+    def : Pat<(f128 (sint_to_fp (i64 (extractelt v2i64:$src, 1)))),
+              (f128 (XSCVSDQP
+                      (EXTRACT_SUBREG (XXPERMDI $src, $src, 3), sub_64)))>;
+    def : Pat<(f128 (uint_to_fp (i64 (extractelt v2i64:$src, 0)))),
+              (f128 (XSCVUDQP (COPY_TO_REGCLASS $src, VFRC)))>;
+    def : Pat<(f128 (uint_to_fp (i64 (extractelt v2i64:$src, 1)))),
+              (f128 (XSCVUDQP
+                      (EXTRACT_SUBREG (XXPERMDI $src, $src, 3), sub_64)))>;
+
+    // (Un)Signed Word vector extract -> QP
+    def : Pat<(f128 (sint_to_fp (i32 (extractelt v4i32:$src, 1)))),
+              (f128 (XSCVSDQP (EXTRACT_SUBREG (VEXTSW2D $src), sub_64)))>;
+    foreach Idx = [0,2,3] in {
+      def : Pat<(f128 (sint_to_fp (i32 (extractelt v4i32:$src, Idx)))),
+                (f128 (XSCVSDQP (EXTRACT_SUBREG
+                                (VEXTSW2D (VSPLTW Idx, $src)), sub_64)))>;
+    }
+    foreach Idx = 0-3 in {
+      def : Pat<(f128 (uint_to_fp (i32 (extractelt v4i32:$src, Idx)))),
+                (f128 (XSCVUDQP (XXEXTRACTUW $src, !shl(Idx, 2))))>;
+    }
+
+    // (Un)Signed HWord vector extract -> QP
+    foreach Idx = 0-7 in {
+      def : Pat<(f128 (sint_to_fp
+                        (i32 (sext_inreg
+                               (vector_extract v8i16:$src, Idx), i16)))),
+              (f128 (XSCVSDQP (EXTRACT_SUBREG
+                                (VEXTSH2D (VEXTRACTUH !add(Idx, Idx), $src)),
+                                sub_64)))>;
+      // The SDAG adds the `and` since an `i16` is being extracted as an `i32`.
+      def : Pat<(f128 (uint_to_fp
+                        (and (i32 (vector_extract v8i16:$src, Idx)), 65535))),
+                (f128 (XSCVUDQP (EXTRACT_SUBREG
+                                  (VEXTRACTUH !add(Idx, Idx), $src), sub_64)))>;
+    }
+
+    // (Un)Signed Byte vector extract -> QP
+    foreach Idx = 0-15 in {
+      def : Pat<(f128 (sint_to_fp
+                        (i32 (sext_inreg (vector_extract v16i8:$src, Idx),
+                                         i8)))),
+                (f128 (XSCVSDQP (EXTRACT_SUBREG
+                                  (VEXTSB2D (VEXTRACTUB Idx, $src)), sub_64)))>;
+      def : Pat<(f128 (uint_to_fp
+                        (and (i32 (vector_extract v16i8:$src, Idx)), 255))),
+                (f128 (XSCVUDQP
+                        (EXTRACT_SUBREG (VEXTRACTUB Idx, $src), sub_64)))>;
+    }
+
+    // Unsiged int in vsx register -> QP
+    def : Pat<(f128 (uint_to_fp (i32 (PPCmfvsr f64:$src)))),
+              (f128 (XSCVUDQP
+                      (XXEXTRACTUW (SUBREG_TO_REG (i64 1), $src, sub_64), 4)))>;
+  } // IsBigEndian, HasP9Vector
+
+  let Predicates = [IsLittleEndian, HasP9Vector] in {
+
+    // (Un)Signed DWord vector extract -> QP
+    def : Pat<(f128 (sint_to_fp (i64 (extractelt v2i64:$src, 0)))),
+              (f128 (XSCVSDQP
+                      (EXTRACT_SUBREG (XXPERMDI $src, $src, 3), sub_64)))>;
+    def : Pat<(f128 (sint_to_fp (i64 (extractelt v2i64:$src, 1)))),
+              (f128 (XSCVSDQP (COPY_TO_REGCLASS $src, VFRC)))>;
+    def : Pat<(f128 (uint_to_fp (i64 (extractelt v2i64:$src, 0)))),
+              (f128 (XSCVUDQP
+                      (EXTRACT_SUBREG (XXPERMDI $src, $src, 3), sub_64)))>;
+    def : Pat<(f128 (uint_to_fp (i64 (extractelt v2i64:$src, 1)))),
+              (f128 (XSCVUDQP (COPY_TO_REGCLASS $src, VFRC)))>;
+
+    // (Un)Signed Word vector extract -> QP
+    foreach Idx = [[0,3],[1,2],[3,0]] in {
+      def : Pat<(f128 (sint_to_fp (i32 (extractelt v4i32:$src, !head(Idx))))),
+                (f128 (XSCVSDQP (EXTRACT_SUBREG
+                                  (VEXTSW2D (VSPLTW !head(!tail(Idx)), $src)),
+                                  sub_64)))>;
+    }
+    def : Pat<(f128 (sint_to_fp (i32 (extractelt v4i32:$src, 2)))),
+              (f128 (XSCVSDQP (EXTRACT_SUBREG (VEXTSW2D $src), sub_64)))>;
+
+    foreach Idx = [[0,12],[1,8],[2,4],[3,0]] in {
+      def : Pat<(f128 (uint_to_fp (i32 (extractelt v4i32:$src, !head(Idx))))),
+                (f128 (XSCVUDQP (XXEXTRACTUW $src, !head(!tail(Idx)))))>;
+    }
+
+    // (Un)Signed HWord vector extract -> QP
+    // The Nested foreach lists identifies the vector element and corresponding
+    // register byte location.
+    foreach Idx = [[0,14],[1,12],[2,10],[3,8],[4,6],[5,4],[6,2],[7,0]] in {
+      def : Pat<(f128 (sint_to_fp
+                        (i32 (sext_inreg
+                               (vector_extract v8i16:$src, !head(Idx)), i16)))),
+                (f128 (XSCVSDQP
+                        (EXTRACT_SUBREG (VEXTSH2D
+                                          (VEXTRACTUH !head(!tail(Idx)), $src)),
+                                        sub_64)))>;
+      def : Pat<(f128 (uint_to_fp
+                        (and (i32 (vector_extract v8i16:$src, !head(Idx))),
+                             65535))),
+                (f128 (XSCVUDQP (EXTRACT_SUBREG
+                                  (VEXTRACTUH !head(!tail(Idx)), $src), sub_64)))>;
+    }
+
+    // (Un)Signed Byte vector extract -> QP
+    foreach Idx = [[0,15],[1,14],[2,13],[3,12],[4,11],[5,10],[6,9],[7,8],[8,7],
+                   [9,6],[10,5],[11,4],[12,3],[13,2],[14,1],[15,0]] in {
+      def : Pat<(f128 (sint_to_fp
+                        (i32 (sext_inreg
+                               (vector_extract v16i8:$src, !head(Idx)), i8)))),
+                (f128 (XSCVSDQP
+                        (EXTRACT_SUBREG
+                          (VEXTSB2D (VEXTRACTUB !head(!tail(Idx)), $src)),
+                          sub_64)))>;
+      def : Pat<(f128 (uint_to_fp
+                        (and (i32 (vector_extract v16i8:$src, !head(Idx))),
+                             255))),
+                (f128 (XSCVUDQP
+                        (EXTRACT_SUBREG
+                          (VEXTRACTUB !head(!tail(Idx)), $src), sub_64)))>;
+    }
+
+    // Unsiged int in vsx register -> QP
+    def : Pat<(f128 (uint_to_fp (i32 (PPCmfvsr f64:$src)))),
+              (f128 (XSCVUDQP
+                      (XXEXTRACTUW (SUBREG_TO_REG (i64 1), $src, sub_64), 8)))>;
+  } // IsLittleEndian, HasP9Vector
+
   // Convert (Un)Signed DWord in memory -> QP
   def : Pat<(f128 (sint_to_fp (i64 (load xaddr:$src)))),
             (f128 (XSCVSDQP (LXSDX xaddr:$src)))>;
@@ -3241,7 +3394,27 @@ let AddedComplexity = 400, Predicates = [HasP9Vector] in {
               (f64 (PPCcv_fp_to_uint_in_vsr f64:$src)), xoaddr:$dst, 1),
             (STXSIBX (XSCVDPUXWS f64:$src), xoaddr:$dst)>;
 
+  // Round & Convert QP -> DP/SP
+  def : Pat<(f64 (fpround f128:$src)), (f64 (XSCVQPDP $src))>;
+  def : Pat<(f32 (fpround f128:$src)), (f32 (XSRSP (XSCVQPDPO $src)))>;
+
+  // Convert SP -> QP
+  def : Pat<(f128 (fpextend f32:$src)),
+            (f128 (XSCVDPQP (COPY_TO_REGCLASS $src, VFRC)))>;
+
 } // end HasP9Vector, AddedComplexity
+
+let AddedComplexity = 400 in {
+  let Predicates = [IsISA3_0, HasP9Vector, HasDirectMove, IsBigEndian] in {
+    def : Pat<(f128 (PPCbuild_fp128 i64:$rB, i64:$rA)),
+              (f128 (COPY_TO_REGCLASS (MTVSRDD $rB, $rA), VRRC))>;
+  }
+  let Predicates = [IsISA3_0, HasP9Vector, HasDirectMove, IsLittleEndian] in {
+    def : Pat<(f128 (PPCbuild_fp128 i64:$rA, i64:$rB)),
+              (f128 (COPY_TO_REGCLASS (MTVSRDD $rB, $rA), VRRC))>;
+  }
+}
+
 let Predicates = [HasP9Vector] in {
   let isPseudo = 1 in {
     let mayStore = 1 in {

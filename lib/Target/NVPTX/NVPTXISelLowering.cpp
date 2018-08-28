@@ -15,7 +15,6 @@
 #include "NVPTXISelLowering.h"
 #include "MCTargetDesc/NVPTXBaseInfo.h"
 #include "NVPTX.h"
-#include "NVPTXSection.h"
 #include "NVPTXSubtarget.h"
 #include "NVPTXTargetMachine.h"
 #include "NVPTXTargetObjectFile.h"
@@ -376,6 +375,7 @@ NVPTXTargetLowering::NVPTXTargetLowering(const NVPTXTargetMachine &TM,
   setOperationAction(ISD::FP_TO_SINT, MVT::f16, Legal);
   setOperationAction(ISD::BUILD_VECTOR, MVT::v2f16, Custom);
   setOperationAction(ISD::EXTRACT_VECTOR_ELT, MVT::v2f16, Custom);
+  setOperationAction(ISD::INSERT_VECTOR_ELT, MVT::v2f16, Expand);
   setOperationAction(ISD::VECTOR_SHUFFLE, MVT::v2f16, Expand);
 
   setFP16OperationAction(ISD::SETCC, MVT::f16, Legal, Promote);
@@ -467,9 +467,6 @@ NVPTXTargetLowering::NVPTXTargetLowering(const NVPTXTargetMachine &TM,
 
   // TRAP can be lowered to PTX trap
   setOperationAction(ISD::TRAP, MVT::Other, Legal);
-
-  setOperationAction(ISD::ADDC, MVT::i64, Expand);
-  setOperationAction(ISD::ADDE, MVT::i64, Expand);
 
   // Register custom handling for vector loads/stores
   for (MVT VT : MVT::vector_valuetypes()) {
@@ -4738,31 +4735,8 @@ void NVPTXTargetLowering::ReplaceNodeResults(
   }
 }
 
-// Pin NVPTXSection's and NVPTXTargetObjectFile's vtables to this file.
-void NVPTXSection::anchor() {}
-
-NVPTXTargetObjectFile::~NVPTXTargetObjectFile() {
-  delete static_cast<NVPTXSection *>(TextSection);
-  delete static_cast<NVPTXSection *>(DataSection);
-  delete static_cast<NVPTXSection *>(BSSSection);
-  delete static_cast<NVPTXSection *>(ReadOnlySection);
-
-  delete static_cast<NVPTXSection *>(StaticCtorSection);
-  delete static_cast<NVPTXSection *>(StaticDtorSection);
-  delete static_cast<NVPTXSection *>(LSDASection);
-  delete static_cast<NVPTXSection *>(EHFrameSection);
-  delete static_cast<NVPTXSection *>(DwarfAbbrevSection);
-  delete static_cast<NVPTXSection *>(DwarfInfoSection);
-  delete static_cast<NVPTXSection *>(DwarfLineSection);
-  delete static_cast<NVPTXSection *>(DwarfFrameSection);
-  delete static_cast<NVPTXSection *>(DwarfPubTypesSection);
-  delete static_cast<const NVPTXSection *>(DwarfDebugInlineSection);
-  delete static_cast<NVPTXSection *>(DwarfStrSection);
-  delete static_cast<NVPTXSection *>(DwarfLocSection);
-  delete static_cast<NVPTXSection *>(DwarfARangesSection);
-  delete static_cast<NVPTXSection *>(DwarfRangesSection);
-  delete static_cast<NVPTXSection *>(DwarfMacinfoSection);
-}
+// Pin NVPTXTargetObjectFile's vtables to this file.
+NVPTXTargetObjectFile::~NVPTXTargetObjectFile() {}
 
 MCSection *NVPTXTargetObjectFile::SelectSectionForGlobal(
     const GlobalObject *GO, SectionKind Kind, const TargetMachine &TM) const {

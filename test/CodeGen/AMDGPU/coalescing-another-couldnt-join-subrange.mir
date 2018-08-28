@@ -1,0 +1,442 @@
+# RUN: llc -march=amdgcn -mcpu=gfx803 -run-pass simple-register-coalescing -verify-machineinstrs -o - %s | FileCheck --check-prefix=GCN %s
+#
+# This is another example of a test giving "Couldn't join subrange!"
+#
+# GCN: {{^body}}
+
+--- |
+  ; ModuleID = 'cutdown.ll'
+  source_filename = "cutdown.ll"
+  target datalayout = "e-p:64:64-p1:64:64-p2:32:32-p3:32:32-p4:64:64-p5:32:32-p6:32:32-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:1024-v2048:2048-n32:64-S32-A5"
+  target triple = "amdgcn--amdpal"
+  
+  ; Function Attrs: nounwind
+  define dllexport amdgpu_cs void @_amdgpu_cs_main() local_unnamed_addr #0 !spirv.ExecutionModel !1 {
+  bb1:
+    br i1 undef, label %"myprint.exit", label %bb2, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb2:                                              ; preds = %bb1
+    br i1 undef, label %bb3, label %.lr.ph, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb3:                                              ; preds = %bb2
+    br label %.loopexit, !structurizecfg.uniform !2
+  
+  .lr.ph:                                           ; preds = %bb2
+    br i1 undef, label %bb7, label %bb6, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb6:                                              ; preds = %.lr.ph
+    br label %bb7, !structurizecfg.uniform !2
+  
+  bb7:                                              ; preds = %bb6, %.lr.ph
+    br i1 undef, label %bb11, label %bb8, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb8:                                              ; preds = %bb7
+    br label %bb11, !structurizecfg.uniform !2
+  
+  bb11:                                             ; preds = %bb7, %bb8
+    br i1 undef, label %bb14, label %bb13, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb13:                                             ; preds = %bb11
+    br i1 undef, label %bb135, label %.lr.ph.1, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb14:                                             ; preds = %bb163, %bb11, %bb135, %bb142, %bb149, %bb156
+    br i1 undef, label %.lr.ph3897.preheader, label %bb19, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  .lr.ph3897.preheader:                             ; preds = %bb14
+    br i1 undef, label %._crit_edge3898.unr-lcssa, label %.lr.ph3897, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  .lr.ph3897:                                       ; preds = %.lr.ph3897.preheader
+    br label %._crit_edge3898.unr-lcssa, !structurizecfg.uniform !2
+  
+  ._crit_edge3898.unr-lcssa:                        ; preds = %.lr.ph3897, %.lr.ph3897.preheader
+    br i1 undef, label %bb19, label %.lr.ph3897.epil, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  .lr.ph3897.epil:                                  ; preds = %._crit_edge3898.unr-lcssa
+    br label %bb19, !structurizecfg.uniform !2
+  
+  bb19:                                             ; preds = %.lr.ph3897.epil, %._crit_edge3898.unr-lcssa, %bb14
+    %__llpc_global_proxy_r0.4.vec.extract969 = extractelement <4 x i32> zeroinitializer, i32 1
+    %tmp21 = and i32 1, %__llpc_global_proxy_r0.4.vec.extract969
+    %__llpc_global_proxy_r1.0.vec.insert1262 = insertelement <4 x i32> undef, i32 %tmp21, i32 0
+    br i1 undef, label %bb24, label %bb22, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb22:                                             ; preds = %bb19
+    br label %bb24, !structurizecfg.uniform !2
+  
+  bb24:                                             ; preds = %bb22, %bb19
+    %__llpc_global_proxy_r0.6 = phi <4 x i32> [ zeroinitializer, %bb22 ], [ zeroinitializer, %bb19 ]
+    %__llpc_global_proxy_r1.1 = phi <4 x i32> [ <i32 0, i32 0, i32 0, i32 undef>, %bb22 ], [ %__llpc_global_proxy_r1.0.vec.insert1262, %bb19 ]
+    %__llpc_global_proxy_r0.8.vec.extract1082 = extractelement <4 x i32> %__llpc_global_proxy_r0.6, i32 2
+    %tmp25 = add i32 %__llpc_global_proxy_r0.8.vec.extract1082, 1
+    %tmp26 = icmp sgt i32 %tmp25, 7
+    %__llpc_global_proxy_r1.0.vec.insert = insertelement <4 x i32> %__llpc_global_proxy_r1.1, i32 undef, i32 0
+    br i1 %tmp26, label %.loopexit, label %bb39, !llvm.loop !3, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  .loopexit:                                        ; preds = %bb39, %bb3, %bb24
+    %__llpc_global_proxy_r1.2 = phi <4 x i32> [ undef, %bb3 ], [ %__llpc_global_proxy_r1.0.vec.insert, %bb24 ], [ %__llpc_global_proxy_r1.0.vec.insert, %bb39 ]
+    %__llpc_global_proxy_r1.12.vec.extract1295 = extractelement <4 x i32> %__llpc_global_proxy_r1.2, i32 3
+    %tmp27 = icmp ne i32 %__llpc_global_proxy_r1.12.vec.extract1295, 0
+    %tmp28 = sext i1 %tmp27 to i32
+    %tmp30 = icmp eq i32 %tmp28, 0
+    br i1 %tmp30, label %bb32, label %bb36, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb32:                                             ; preds = %.loopexit
+    br label %bb36, !structurizecfg.uniform !2
+  
+  bb36:                                             ; preds = %bb32, %.loopexit
+    br label %"myprint.exit", !structurizecfg.uniform !2
+  
+  "myprint.exit":                                  ; preds = %bb36, %bb1
+    ret void
+  
+  bb39:                                             ; preds = %bb24
+    br label %.loopexit, !structurizecfg.uniform !2
+  
+  .lr.ph.1:                                         ; preds = %bb13
+    br i1 undef, label %bb131, label %bb130, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb130:                                            ; preds = %.lr.ph.1
+    br label %bb131, !structurizecfg.uniform !2
+  
+  bb131:                                            ; preds = %bb130, %.lr.ph.1
+    br i1 undef, label %bb132, label %bb134, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb132:                                            ; preds = %bb131
+    br label %bb134, !structurizecfg.uniform !2
+  
+  bb134:                                            ; preds = %bb132, %bb131
+    br label %bb135, !structurizecfg.uniform !2
+  
+  bb135:                                            ; preds = %bb134, %bb13
+    br i1 undef, label %bb14, label %bb136, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb136:                                            ; preds = %bb135
+    br i1 undef, label %bb142, label %.lr.ph.2, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  .lr.ph.2:                                         ; preds = %bb136
+    br i1 undef, label %bb138, label %bb137, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb137:                                            ; preds = %.lr.ph.2
+    br label %bb138, !structurizecfg.uniform !2
+  
+  bb138:                                            ; preds = %bb137, %.lr.ph.2
+    br i1 undef, label %bb139, label %bb141, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb139:                                            ; preds = %bb138
+    br label %bb141, !structurizecfg.uniform !2
+  
+  bb141:                                            ; preds = %bb139, %bb138
+    br label %bb142, !structurizecfg.uniform !2
+  
+  bb142:                                            ; preds = %bb141, %bb136
+    br i1 undef, label %bb14, label %bb143, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb143:                                            ; preds = %bb142
+    br i1 undef, label %bb149, label %.lr.ph.3, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  .lr.ph.3:                                         ; preds = %bb143
+    br i1 undef, label %bb145, label %bb144, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb144:                                            ; preds = %.lr.ph.3
+    br label %bb145, !structurizecfg.uniform !2
+  
+  bb145:                                            ; preds = %bb144, %.lr.ph.3
+    br i1 undef, label %bb146, label %bb148, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb146:                                            ; preds = %bb145
+    br label %bb148, !structurizecfg.uniform !2
+  
+  bb148:                                            ; preds = %bb146, %bb145
+    br label %bb149, !structurizecfg.uniform !2
+  
+  bb149:                                            ; preds = %bb148, %bb143
+    br i1 undef, label %bb14, label %bb150, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb150:                                            ; preds = %bb149
+    br i1 undef, label %bb156, label %.lr.ph.4, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  .lr.ph.4:                                         ; preds = %bb150
+    br i1 undef, label %bb152, label %bb151, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb151:                                            ; preds = %.lr.ph.4
+    br label %bb152, !structurizecfg.uniform !2
+  
+  bb152:                                            ; preds = %bb151, %.lr.ph.4
+    br i1 undef, label %bb153, label %bb155, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb153:                                            ; preds = %bb152
+    br label %bb155, !structurizecfg.uniform !2
+  
+  bb155:                                            ; preds = %bb153, %bb152
+    br label %bb156, !structurizecfg.uniform !2
+  
+  bb156:                                            ; preds = %bb155, %bb150
+    br i1 undef, label %bb14, label %bb157, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb157:                                            ; preds = %bb156
+    br i1 undef, label %bb163, label %.lr.ph.5, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  .lr.ph.5:                                         ; preds = %bb157
+    br i1 undef, label %bb159, label %bb158, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb158:                                            ; preds = %.lr.ph.5
+    br label %bb159, !structurizecfg.uniform !2
+  
+  bb159:                                            ; preds = %bb158, %.lr.ph.5
+    br i1 undef, label %bb160, label %bb162, !structurizecfg.uniform !2, !amdgpu.uniform !2
+  
+  bb160:                                            ; preds = %bb159
+    br label %bb162, !structurizecfg.uniform !2
+  
+  bb162:                                            ; preds = %bb160, %bb159
+    br label %bb163, !structurizecfg.uniform !2
+  
+  bb163:                                            ; preds = %bb162, %bb157
+    br label %bb14, !structurizecfg.uniform !2
+  }
+  
+  ; Function Attrs: convergent nounwind
+  declare { i1, i64 } @llvm.amdgcn.if(i1) #1
+  
+  ; Function Attrs: convergent nounwind
+  declare { i1, i64 } @llvm.amdgcn.else(i64) #1
+  
+  ; Function Attrs: convergent nounwind readnone
+  declare i64 @llvm.amdgcn.break(i64) #2
+  
+  ; Function Attrs: convergent nounwind readnone
+  declare i64 @llvm.amdgcn.if.break(i1, i64) #2
+  
+  ; Function Attrs: convergent nounwind readnone
+  declare i64 @llvm.amdgcn.else.break(i64, i64) #2
+  
+  ; Function Attrs: convergent nounwind
+  declare i1 @llvm.amdgcn.loop(i64) #1
+  
+  ; Function Attrs: convergent nounwind
+  declare void @llvm.amdgcn.end.cf(i64) #1
+  
+  attributes #0 = { nounwind "target-cpu"="gfx803" }
+  attributes #1 = { convergent nounwind }
+  attributes #2 = { convergent nounwind readnone }
+  
+  !amdgpu.pal.metadata = !{!0}
+  
+  !0 = !{i32 268435482, i32 1, i32 268435488, i32 -1, i32 268435480, i32 1319776600, i32 268435481, i32 1655589334, i32 268435538, i32 64, i32 268435539, i32 0, i32 11794, i32 2883584, i32 11795, i32 6022, i32 11783, i32 64, i32 11784, i32 1, i32 11785, i32 1, i32 268435530, i32 0, i32 268435495, i32 0, i32 268435502, i32 0, i32 268435509, i32 256, i32 268435516, i32 104, i32 268435456, i32 -1737113002, i32 268435457, i32 -1389682907, i32 11840, i32 268435456, i32 11842, i32 0}
+  !1 = !{i32 5}
+  !2 = !{}
+  !3 = distinct !{!3, !4}
+  !4 = !{!"llvm.loop.unroll.count", i32 32}
+
+...
+---
+name:            _amdgpu_cs_main
+alignment:       0
+exposesReturnsTwice: false
+legalized:       false
+regBankSelected: false
+selected:        false
+failedISel:      false
+tracksRegLiveness: true
+registers:       
+  - { id: 0, class: sreg_128, preferred-register: '' }
+  - { id: 1, class: sreg_128, preferred-register: '%24' }
+  - { id: 2, class: sreg_128, preferred-register: '' }
+  - { id: 3, class: sreg_128, preferred-register: '' }
+  - { id: 4, class: sreg_128, preferred-register: '' }
+  - { id: 5, class: sreg_128, preferred-register: '' }
+  - { id: 6, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 7, class: sreg_128, preferred-register: '' }
+  - { id: 8, class: sreg_128, preferred-register: '' }
+  - { id: 9, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 10, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 11, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 12, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 13, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 14, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 15, class: sreg_128, preferred-register: '' }
+  - { id: 16, class: sreg_128, preferred-register: '' }
+  - { id: 17, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 18, class: sreg_128, preferred-register: '' }
+  - { id: 19, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 20, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 21, class: sreg_128, preferred-register: '' }
+  - { id: 22, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 23, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 24, class: sreg_32_xm0, preferred-register: '%1' }
+  - { id: 25, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 26, class: sreg_128, preferred-register: '' }
+  - { id: 27, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 28, class: sreg_32_xm0, preferred-register: '' }
+  - { id: 29, class: vreg_128, preferred-register: '' }
+  - { id: 30, class: vreg_128, preferred-register: '' }
+  - { id: 31, class: vreg_128, preferred-register: '' }
+  - { id: 32, class: vreg_128, preferred-register: '' }
+  - { id: 33, class: vgpr_32, preferred-register: '' }
+  - { id: 34, class: sreg_128, preferred-register: '' }
+  - { id: 35, class: sreg_128, preferred-register: '' }
+  - { id: 36, class: vreg_128, preferred-register: '' }
+liveins:         
+frameInfo:       
+  isFrameAddressTaken: false
+  isReturnAddressTaken: false
+  hasStackMap:     false
+  hasPatchPoint:   false
+  stackSize:       0
+  offsetAdjustment: 0
+  maxAlignment:    0
+  adjustsStack:    false
+  hasCalls:        false
+  stackProtector:  ''
+  maxCallFrameSize: 4294967295
+  hasOpaqueSPAdjustment: false
+  hasVAStart:      false
+  hasMustTailInVarArgFunc: false
+  localFrameSize:  0
+  savePoint:       ''
+  restorePoint:    ''
+fixedStack:      
+stack:           
+constants:       
+body:             |
+  bb.0.bb1:
+    successors: %bb.21(0x40000000), %bb.1(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.21, implicit undef $scc
+    S_BRANCH %bb.1
+  
+  bb.1.bb2:
+    successors: %bb.2(0x40000000), %bb.3(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.3, implicit undef $scc
+    S_BRANCH %bb.2
+  
+  bb.2.bb3:
+    successors: %bb.18(0x80000000)
+  
+    %36:vreg_128 = IMPLICIT_DEF
+    S_BRANCH %bb.18
+  
+  bb.3..lr.ph:
+    successors: %bb.5(0x40000000), %bb.4(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.5, implicit undef $scc
+    S_BRANCH %bb.4
+  
+  bb.4.bb6:
+    successors: %bb.5(0x80000000)
+  
+  
+  bb.5.bb7:
+    successors: %bb.7(0x40000000), %bb.6(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.7, implicit undef $scc
+    S_BRANCH %bb.6
+  
+  bb.6.bb8:
+    successors: %bb.7(0x80000000)
+  
+  
+  bb.7.bb11:
+    successors: %bb.9(0x40000000), %bb.8(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.9, implicit undef $scc
+    S_BRANCH %bb.8
+  
+  bb.8.bb13:
+    successors: %bb.9(0x80000000)
+  
+  
+  bb.9.bb14:
+    successors: %bb.10(0x40000000), %bb.14(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.14, implicit undef $scc
+    S_BRANCH %bb.10
+  
+  bb.10..lr.ph3897.preheader:
+    successors: %bb.12(0x40000000), %bb.11(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.12, implicit undef $scc
+    S_BRANCH %bb.11
+  
+  bb.11..lr.ph3897:
+    successors: %bb.12(0x80000000)
+  
+  
+  bb.12.._crit_edge3898.unr-lcssa:
+    successors: %bb.14(0x40000000), %bb.13(0x40000000)
+  
+    S_CBRANCH_SCC1 %bb.14, implicit undef $scc
+    S_BRANCH %bb.13
+  
+  bb.13..lr.ph3897.epil:
+    successors: %bb.14(0x80000000)
+  
+  
+  bb.14.bb19:
+    successors: %bb.15(0x40000000), %bb.16(0x40000000)
+  
+    %6:sreg_32_xm0 = S_MOV_B32 0
+    undef %7.sub2:sreg_128 = COPY %6
+    S_CBRANCH_SCC0 %bb.16, implicit undef $scc
+  
+  bb.15:
+    successors: %bb.17(0x80000000)
+  
+    undef %8.sub0:sreg_128 = COPY killed %6
+    %5:sreg_128 = COPY killed %7
+    %34:sreg_128 = COPY killed %5
+    %35:sreg_128 = COPY killed %8
+    S_BRANCH %bb.17
+  
+  bb.16.bb22:
+    successors: %bb.17(0x80000000)
+  
+    undef %18.sub0:sreg_128 = COPY %6
+    %18.sub1:sreg_128 = COPY %6
+    %18.sub2:sreg_128 = COPY killed %6
+    %16:sreg_128 = COPY killed %18
+    %15:sreg_128 = COPY killed %7
+    %34:sreg_128 = COPY killed %15
+    %35:sreg_128 = COPY killed %16
+  
+  bb.17.bb24:
+    successors: %bb.18(0x40000000), %bb.22(0x40000000)
+  
+    %2:sreg_128 = COPY killed %35
+    %1:sreg_128 = COPY killed %34
+    %24:sreg_32_xm0 = S_ADD_I32 killed %1.sub2, target-flags(amdgpu-gotprel32-hi) 1, implicit-def dead $scc
+    S_CMP_LT_I32 killed %24, 8, implicit-def $scc
+    %30:vreg_128 = COPY %2
+    %36:vreg_128 = COPY killed %30
+    S_CBRANCH_SCC1 %bb.22, implicit killed $scc
+    S_BRANCH %bb.18
+  
+  bb.18..loopexit:
+    successors: %bb.19(0x30000000), %bb.20(0x50000000)
+  
+    %29:vreg_128 = COPY killed %36
+    V_CMP_NE_U32_e32 0, killed %29.sub3, implicit-def $vcc, implicit $exec
+    $vcc = S_AND_B64 $exec, killed $vcc, implicit-def dead $scc
+    S_CBRANCH_VCCNZ %bb.20, implicit killed $vcc
+    S_BRANCH %bb.19
+  
+  bb.19.bb32:
+    successors: %bb.20(0x80000000)
+  
+  
+  bb.20.bb36:
+    successors: %bb.21(0x80000000)
+  
+  
+  bb.21.myprint.exit:
+    S_ENDPGM
+  
+  bb.22.bb39:
+    successors: %bb.18(0x80000000)
+  
+    %31:vreg_128 = COPY killed %2
+    %36:vreg_128 = COPY killed %31
+    S_BRANCH %bb.18
+
+...

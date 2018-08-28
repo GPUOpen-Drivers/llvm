@@ -13,7 +13,7 @@
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/AliasAnalysis.h"
-#include "llvm/Analysis/Utils/Local.h"
+#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/IRBuilder.h"
@@ -312,7 +312,7 @@ bool FlattenCFGOpt::FlattenParallelAndOr(BasicBlock *BB, IRBuilder<> &Builder) {
     new UnreachableInst(CB->getContext(), CB);
   } while (Iteration);
 
-  DEBUG(dbgs() << "Use parallel and/or in:\n" << *FirstCondBlock);
+  LLVM_DEBUG(dbgs() << "Use parallel and/or in:\n" << *FirstCondBlock);
   return true;
 }
 
@@ -469,7 +469,7 @@ bool FlattenCFGOpt::MergeIfRegion(BasicBlock *BB, IRBuilder<> &Builder) {
   // Remove \param SecondEntryBlock
   SecondEntryBlock->dropAllReferences();
   SecondEntryBlock->eraseFromParent();
-  DEBUG(dbgs() << "If conditions merged into:\n" << *FirstEntryBlock);
+  LLVM_DEBUG(dbgs() << "If conditions merged into:\n" << *FirstEntryBlock);
   return true;
 }
 

@@ -19,7 +19,7 @@
 #include "llvm/Analysis/BasicAliasAnalysis.h"
 #include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
-#include "llvm/Analysis/Utils/Local.h"
+#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IRBuilder.h"
@@ -107,6 +107,10 @@ static bool matchAndOrChain(Value *V, MaskOps &MOps) {
   // Initialize result source operand.
   if (!MOps.Root)
     MOps.Root = Candidate;
+
+  // The shift constant is out-of-range? This code hasn't been simplified.
+  if (BitIndex >= MOps.Mask.getBitWidth())
+    return false;
 
   // Fill in the mask bit derived from the shift constant.
   MOps.Mask.setBit(BitIndex);

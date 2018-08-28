@@ -178,8 +178,8 @@ bool MachineCSE::PerformTrivialCopyPropagation(MachineInstr *MI,
       continue;
     if (!MRI->constrainRegAttrs(SrcReg, Reg))
       continue;
-    DEBUG(dbgs() << "Coalescing: " << *DefMI);
-    DEBUG(dbgs() << "***     to: " << *MI);
+    LLVM_DEBUG(dbgs() << "Coalescing: " << *DefMI);
+    LLVM_DEBUG(dbgs() << "***     to: " << *MI);
     // Propagate SrcReg of copies to MI.
     MO.setReg(SrcReg);
     MRI->clearKillFlags(SrcReg);
@@ -455,13 +455,13 @@ bool MachineCSE::isProfitableToCSE(unsigned CSReg, unsigned Reg,
 }
 
 void MachineCSE::EnterScope(MachineBasicBlock *MBB) {
-  DEBUG(dbgs() << "Entering: " << MBB->getName() << '\n');
+  LLVM_DEBUG(dbgs() << "Entering: " << MBB->getName() << '\n');
   ScopeType *Scope = new ScopeType(VNT);
   ScopeMap[MBB] = Scope;
 }
 
 void MachineCSE::ExitScope(MachineBasicBlock *MBB) {
-  DEBUG(dbgs() << "Exiting: " << MBB->getName() << '\n');
+  LLVM_DEBUG(dbgs() << "Exiting: " << MBB->getName() << '\n');
   DenseMap<MachineBasicBlock*, ScopeType*>::iterator SI = ScopeMap.find(MBB);
   assert(SI != ScopeMap.end());
   delete SI->second;
@@ -545,13 +545,12 @@ bool MachineCSE::ProcessBlock(MachineBasicBlock *MBB) {
     // Found a common subexpression, eliminate it.
     unsigned CSVN = VNT.lookup(MI);
     MachineInstr *CSMI = Exps[CSVN];
-    DEBUG(dbgs() << "Examining: " << *MI);
-    DEBUG(dbgs() << "*** Found a common subexpression: " << *CSMI);
+    LLVM_DEBUG(dbgs() << "Examining: " << *MI);
+    LLVM_DEBUG(dbgs() << "*** Found a common subexpression: " << *CSMI);
 
     // Check if it's profitable to perform this CSE.
     bool DoCSE = true;
-    unsigned NumDefs = MI->getDesc().getNumDefs() +
-                       MI->getDesc().getNumImplicitDefs();
+    unsigned NumDefs = MI->getNumDefs();
 
     for (unsigned i = 0, e = MI->getNumOperands(); NumDefs && i != e; ++i) {
       MachineOperand &MO = MI->getOperand(i);
@@ -580,7 +579,7 @@ bool MachineCSE::ProcessBlock(MachineBasicBlock *MBB) {
              "Do not CSE physical register defs!");
 
       if (!isProfitableToCSE(NewReg, OldReg, CSMI, MI)) {
-        DEBUG(dbgs() << "*** Not profitable, avoid CSE!\n");
+        LLVM_DEBUG(dbgs() << "*** Not profitable, avoid CSE!\n");
         DoCSE = false;
         break;
       }
@@ -589,7 +588,8 @@ bool MachineCSE::ProcessBlock(MachineBasicBlock *MBB) {
       // within the constraints (register class, bank, or low-level type) of
       // the old instruction.
       if (!MRI->constrainRegAttrs(NewReg, OldReg)) {
-        DEBUG(dbgs() << "*** Not the same register constraints, avoid CSE!\n");
+        LLVM_DEBUG(
+            dbgs() << "*** Not the same register constraints, avoid CSE!\n");
         DoCSE = false;
         break;
       }

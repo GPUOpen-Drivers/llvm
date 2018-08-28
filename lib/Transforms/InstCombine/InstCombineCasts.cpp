@@ -266,27 +266,27 @@ Instruction *InstCombiner::commonCastTransforms(CastInst &CI) {
     if (Instruction::CastOps NewOpc = isEliminableCastPair(CSrc, &CI)) {
       // The first cast (CSrc) is eliminable so we need to fix up or replace
       // the second cast (CI). CSrc will then have a good chance of being dead.
-      auto *Res = CastInst::Create(NewOpc, CSrc->getOperand(0), CI.getType());
-
-      // If the eliminable cast has debug users, insert a debug value after the
-      // cast pointing to the new Value.
-      SmallVector<DbgInfoIntrinsic *, 1> CSrcDbgInsts;
-      findDbgUsers(CSrcDbgInsts, CSrc);
-      if (CSrcDbgInsts.size()) {
-        DIBuilder DIB(*CI.getModule());
-        for (auto *DII : CSrcDbgInsts)
-          DIB.insertDbgValueIntrinsic(
-              Res, DII->getVariable(), DII->getExpression(),
-              DII->getDebugLoc().get(), &*std::next(CI.getIterator()));
-      }
+      auto *Ty = CI.getType();
+      auto *Res = CastInst::Create(NewOpc, CSrc->getOperand(0), Ty);
+      // Replace debug users of the eliminable cast by emitting debug values
+      // which refer to the new cast.
+      if (Ty->isIntegerTy() || Ty->isPointerTy())
+        // TODO: Support floats and vectors (see DW_OP_convert, fragment).
+        insertReplacementDbgValues(*CSrc, *Res, *std::next(CI.getIterator()));
       return Res;
     }
   }
 
-  // If we are casting a select, then fold the cast into the select.
-  if (auto *SI = dyn_cast<SelectInst>(Src))
-    if (Instruction *NV = FoldOpIntoSelect(CI, SI))
-      return NV;
+  if (auto *Sel = dyn_cast<SelectInst>(Src)) {
+    // We are casting a select. Try to fold the cast into the select, but only
+    // if the select does not have a compare instruction with matching operand
+    // types. Creating a select with operands that are different sizes than its
+    // condition may inhibit other folds and lead to worse codegen.
+    auto *Cmp = dyn_cast<CmpInst>(Sel->getCondition());
+    if (!Cmp || Cmp->getOperand(0)->getType() != Sel->getType())
+      if (Instruction *NV = FoldOpIntoSelect(CI, Sel))
+        return NV;
+  }
 
   // If we are casting a PHI, then fold the cast into the PHI.
   if (auto *PN = dyn_cast<PHINode>(Src)) {
@@ -671,6 +671,27 @@ Instruction *InstCombiner::visitTrunc(TruncInst &CI) {
   if (Instruction *Result = commonCastTransforms(CI))
     return Result;
 
+  Value *Src = CI.getOperand(0);
+  Type *DestTy = CI.getType(), *SrcTy = Src->getType();
+
+  // Attempt to truncate the entire input expression tree to the destination
+  // type.   Only do this if the dest type is a simple type, don't convert the
+  // expression tree to something weird like i93 unless the source is also
+  // strange.
+  if ((DestTy->isVectorTy() || shouldChangeType(SrcTy, DestTy)) &&
+      canEvaluateTruncated(Src, DestTy, *this, &CI)) {
+
+    // If this cast is a truncate, evaluting in a different type always
+    // eliminates the cast, so it is always a win.
+    LLVM_DEBUG(
+        dbgs() << "ICE: EvaluateInDifferentType converting expression type"
+                  " to avoid cast: "
+               << CI << '\n');
+    Value *Res = EvaluateInDifferentType(Src, DestTy, false);
+    assert(Res->getType() == DestTy);
+    return replaceInstUsesWith(CI, Res);
+  }
+
   // Test if the trunc is the user of a select which is part of a
   // minimum or maximum operation. If so, don't do any more simplification.
   // Even simplifying demanded bits can break the canonical form of a
@@ -684,25 +705,6 @@ Instruction *InstCombiner::visitTrunc(TruncInst &CI) {
   // purpose is to compute bits we don't care about.
   if (SimplifyDemandedInstructionBits(CI))
     return &CI;
-
-  Value *Src = CI.getOperand(0);
-  Type *DestTy = CI.getType(), *SrcTy = Src->getType();
-
-  // Attempt to truncate the entire input expression tree to the destination
-  // type.   Only do this if the dest type is a simple type, don't convert the
-  // expression tree to something weird like i93 unless the source is also
-  // strange.
-  if ((DestTy->isVectorTy() || shouldChangeType(SrcTy, DestTy)) &&
-      canEvaluateTruncated(Src, DestTy, *this, &CI)) {
-
-    // If this cast is a truncate, evaluting in a different type always
-    // eliminates the cast, so it is always a win.
-    DEBUG(dbgs() << "ICE: EvaluateInDifferentType converting expression type"
-          " to avoid cast: " << CI << '\n');
-    Value *Res = EvaluateInDifferentType(Src, DestTy, false);
-    assert(Res->getType() == DestTy);
-    return replaceInstUsesWith(CI, Res);
-  }
 
   // Canonicalize trunc x to i1 -> (icmp ne (and x, 1), 0), likewise for vector.
   if (DestTy->getScalarSizeInBits() == 1) {
@@ -1070,10 +1072,23 @@ Instruction *InstCombiner::visitZExt(ZExtInst &CI) {
            "Can't clear more bits than in SrcTy");
 
     // Okay, we can transform this!  Insert the new expression now.
-    DEBUG(dbgs() << "ICE: EvaluateInDifferentType converting expression type"
-          " to avoid zero extend: " << CI << '\n');
+    LLVM_DEBUG(
+        dbgs() << "ICE: EvaluateInDifferentType converting expression type"
+                  " to avoid zero extend: "
+               << CI << '\n');
     Value *Res = EvaluateInDifferentType(Src, DestTy, false);
     assert(Res->getType() == DestTy);
+
+    // When DestTy is integer, try to preserve any debug values referring
+    // to the zext being replaced.
+    // TODO: This should work for vectors as well, possibly via the use
+    // of DWARF fragments.
+    if (DestTy->isIntegerTy()) {
+      insertReplacementDbgValues(
+          *Src, *Res, CI, [](DbgInfoIntrinsic &OldDII) -> DIExpression * {
+            return OldDII.getExpression();
+          });
+    }
 
     uint32_t SrcBitsKept = SrcTy->getScalarSizeInBits()-BitsToClear;
     uint32_t DestBitSize = DestTy->getScalarSizeInBits();
@@ -1186,22 +1201,19 @@ Instruction *InstCombiner::transformSExtICmp(ICmpInst *ICI, Instruction &CI) {
   if (!Op1->getType()->isIntOrIntVectorTy())
     return nullptr;
 
-  if (Constant *Op1C = dyn_cast<Constant>(Op1)) {
+  if ((Pred == ICmpInst::ICMP_SLT && match(Op1, m_ZeroInt())) ||
+      (Pred == ICmpInst::ICMP_SGT && match(Op1, m_AllOnes()))) {
     // (x <s  0) ? -1 : 0 -> ashr x, 31        -> all ones if negative
     // (x >s -1) ? -1 : 0 -> not (ashr x, 31)  -> all ones if positive
-    if ((Pred == ICmpInst::ICMP_SLT && Op1C->isNullValue()) ||
-        (Pred == ICmpInst::ICMP_SGT && Op1C->isAllOnesValue())) {
+    Value *Sh = ConstantInt::get(Op0->getType(),
+                                 Op0->getType()->getScalarSizeInBits() - 1);
+    Value *In = Builder.CreateAShr(Op0, Sh, Op0->getName() + ".lobit");
+    if (In->getType() != CI.getType())
+      In = Builder.CreateIntCast(In, CI.getType(), true /*SExt*/);
 
-      Value *Sh = ConstantInt::get(Op0->getType(),
-                                   Op0->getType()->getScalarSizeInBits()-1);
-      Value *In = Builder.CreateAShr(Op0, Sh, Op0->getName() + ".lobit");
-      if (In->getType() != CI.getType())
-        In = Builder.CreateIntCast(In, CI.getType(), true /*SExt*/);
-
-      if (Pred == ICmpInst::ICMP_SGT)
-        In = Builder.CreateNot(In, In->getName() + ".not");
-      return replaceInstUsesWith(CI, In);
-    }
+    if (Pred == ICmpInst::ICMP_SGT)
+      In = Builder.CreateNot(In, In->getName() + ".not");
+    return replaceInstUsesWith(CI, In);
   }
 
   if (ConstantInt *Op1C = dyn_cast<ConstantInt>(Op1)) {
@@ -1344,8 +1356,10 @@ Instruction *InstCombiner::visitSExt(SExtInst &CI) {
   if ((DestTy->isVectorTy() || shouldChangeType(SrcTy, DestTy)) &&
       canEvaluateSExtd(Src, DestTy)) {
     // Okay, we can transform this!  Insert the new expression now.
-    DEBUG(dbgs() << "ICE: EvaluateInDifferentType converting expression type"
-          " to avoid sign extend: " << CI << '\n');
+    LLVM_DEBUG(
+        dbgs() << "ICE: EvaluateInDifferentType converting expression type"
+                  " to avoid sign extend: "
+               << CI << '\n');
     Value *Res = EvaluateInDifferentType(Src, DestTy, true);
     assert(Res->getType() == DestTy);
 
@@ -1585,23 +1599,6 @@ Instruction *InstCombiner::visitFPTrunc(FPTruncInst &FPT) {
       Value *InnerTrunc = Builder.CreateFPTrunc(OpI->getOperand(1), Ty);
       return BinaryOperator::CreateFNegFMF(InnerTrunc, OpI);
     }
-  }
-
-  // (fptrunc (select cond, R1, Cst)) -->
-  // (select cond, (fptrunc R1), (fptrunc Cst))
-  //
-  //  - but only if this isn't part of a min/max operation, else we'll
-  // ruin min/max canonical form which is to have the select and
-  // compare's operands be of the same type with no casts to look through.
-  Value *LHS, *RHS;
-  SelectInst *SI = dyn_cast<SelectInst>(FPT.getOperand(0));
-  if (SI &&
-      (isa<ConstantFP>(SI->getOperand(1)) ||
-       isa<ConstantFP>(SI->getOperand(2))) &&
-      matchSelectPattern(SI, LHS, RHS).Flavor == SPF_UNKNOWN) {
-    Value *LHSTrunc = Builder.CreateFPTrunc(SI->getOperand(1), Ty);
-    Value *RHSTrunc = Builder.CreateFPTrunc(SI->getOperand(2), Ty);
-    return SelectInst::Create(SI->getOperand(0), LHSTrunc, RHSTrunc);
   }
 
   if (auto *II = dyn_cast<IntrinsicInst>(FPT.getOperand(0))) {

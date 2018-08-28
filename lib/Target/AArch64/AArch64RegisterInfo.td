@@ -792,7 +792,7 @@ def PPR_3b : PPRClass<7>; // Restricted 3 bit SVE predicate register class.
 
 class PPRAsmOperand <string name, string RegClass, int Width>: AsmOperandClass {
   let Name = "SVE" # name # "Reg";
-  let PredicateMethod = "isSVEVectorRegOfWidth<"
+  let PredicateMethod = "isSVEPredicateVectorRegOfWidth<"
                             # Width # ", " # "AArch64::" # RegClass # "RegClassID>";
   let DiagnosticType = "InvalidSVE" # name # "Reg";
   let RenderMethod = "addRegOperands";
@@ -835,11 +835,34 @@ def ZPR : RegisterClass<"AArch64",
   let Size = 128;
 }
 
-class ZPRAsmOperand <string name, int Width>: AsmOperandClass {
+// SVE restricted 4 bit scalable vector register class
+def ZPR_4b : RegisterClass<"AArch64",
+                         [nxv16i8, nxv8i16, nxv4i32, nxv2i64,
+                          nxv2f16, nxv4f16, nxv8f16,
+                          nxv1f32, nxv2f32, nxv4f32,
+                          nxv1f64, nxv2f64],
+                         128, (sequence "Z%u", 0, 15)> {
+  let Size = 128;
+}
+
+// SVE restricted 3 bit scalable vector register class
+def ZPR_3b : RegisterClass<"AArch64",
+                         [nxv16i8, nxv8i16, nxv4i32, nxv2i64,
+                          nxv2f16, nxv4f16, nxv8f16,
+                          nxv1f32, nxv2f32, nxv4f32,
+                          nxv1f64, nxv2f64],
+                         128, (sequence "Z%u", 0, 7)> {
+  let Size = 128;
+}
+
+class ZPRAsmOperand<string name, int Width, string RegClassSuffix = "">
+    : AsmOperandClass {
   let Name = "SVE" # name # "Reg";
-  let PredicateMethod = "isSVEVectorRegOfWidth<"
-                            # Width # ", AArch64::ZPRRegClassID>";
+  let PredicateMethod = "isSVEDataVectorRegOfWidth<"
+                            # Width # ", AArch64::ZPR"
+                            # RegClassSuffix # "RegClassID>";
   let RenderMethod = "addRegOperands";
+  let DiagnosticType = "InvalidZPR" # RegClassSuffix # Width;
   let ParserMethod = "tryParseSVEDataVector<false, "
                                # !if(!eq(Width, 0), "false", "true") # ">";
 }
@@ -858,6 +881,38 @@ def ZPR32   : ZPRRegOp<"s", ZPRAsmOp32,  ZPR>;
 def ZPR64   : ZPRRegOp<"d", ZPRAsmOp64,  ZPR>;
 def ZPR128  : ZPRRegOp<"q", ZPRAsmOp128, ZPR>;
 
+def ZPRAsmOp3b8   : ZPRAsmOperand<"Vector3bB", 8, "_3b">;
+def ZPRAsmOp3b16  : ZPRAsmOperand<"Vector3bH", 16, "_3b">;
+def ZPRAsmOp3b32  : ZPRAsmOperand<"Vector3bS", 32, "_3b">;
+
+def ZPR3b8  : ZPRRegOp<"b", ZPRAsmOp3b8,  ZPR_3b>;
+def ZPR3b16 : ZPRRegOp<"h", ZPRAsmOp3b16, ZPR_3b>;
+def ZPR3b32 : ZPRRegOp<"s", ZPRAsmOp3b32, ZPR_3b>;
+
+def ZPRAsmOp4b16  : ZPRAsmOperand<"Vector4bH", 16, "_4b">;
+def ZPRAsmOp4b32  : ZPRAsmOperand<"Vector4bS", 32, "_4b">;
+def ZPRAsmOp4b64  : ZPRAsmOperand<"Vector4bD", 64, "_4b">;
+
+def ZPR4b16 : ZPRRegOp<"h", ZPRAsmOp4b16, ZPR_4b>;
+def ZPR4b32 : ZPRRegOp<"s", ZPRAsmOp4b32, ZPR_4b>;
+def ZPR4b64 : ZPRRegOp<"d", ZPRAsmOp4b64, ZPR_4b>;
+
+class FPRasZPR<int Width> : AsmOperandClass{
+  let Name = "FPR" # Width # "asZPR";
+  let PredicateMethod = "isFPRasZPR<AArch64::FPR" # Width # "RegClassID>";
+  let RenderMethod = "addFPRasZPRRegOperands<" # Width # ">";
+}
+
+class FPRasZPROperand<int Width> : RegisterOperand<ZPR> {
+  let ParserMatchClass = FPRasZPR<Width>;
+  let PrintMethod = "printZPRasFPR<" # Width # ">";
+}
+
+def FPR8asZPR   : FPRasZPROperand<8>;
+def FPR16asZPR  : FPRasZPROperand<16>;
+def FPR32asZPR  : FPRasZPROperand<32>;
+def FPR64asZPR  : FPRasZPROperand<64>;
+def FPR128asZPR : FPRasZPROperand<128>;
 
 let Namespace = "AArch64" in {
   def zsub0 : SubRegIndex<128, -1>;
@@ -958,7 +1013,7 @@ class ZPRExtendAsmOperand<string ShiftExtend, int RegWidth, int Scale,
   let Name = "ZPRExtend" # ShiftExtend # RegWidth # Scale
                          # !if(ScaleAlwaysSame, "Only", "");
 
-  let PredicateMethod = "isSVEVectorRegWithShiftExtend<"
+  let PredicateMethod = "isSVEDataVectorRegWithShiftExtend<"
                           # RegWidth # ", AArch64::ZPRRegClassID, "
                           # "AArch64_AM::" # ShiftExtend # ", "
                           # Scale # ", "

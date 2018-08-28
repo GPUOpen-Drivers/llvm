@@ -204,6 +204,9 @@ class StructurizeCFG : public RegionPass {
 
   void orderNodes();
 
+  Loop *getAdjustedLoop(RegionNode *RN);
+  unsigned getAdjustedLoopDepth(RegionNode *RN);
+
   void analyzeLoops(RegionNode *N);
 
   Value *invert(Value *Condition);
@@ -301,6 +304,26 @@ bool StructurizeCFG::doInitialization(Region *R, RGPassManager &RGM) {
   return false;
 }
 
+/// Use the exit block to determine the loop if RN is a SubRegion.
+Loop *StructurizeCFG::getAdjustedLoop(RegionNode *RN) {
+  if (RN->isSubRegion()) {
+    Region *SubRegion = RN->getNodeAs<Region>();
+    return LI->getLoopFor(SubRegion->getExit());
+  }
+
+  return LI->getLoopFor(RN->getEntry());
+}
+
+/// Use the exit block to determine the loop depth if RN is a SubRegion.
+unsigned StructurizeCFG::getAdjustedLoopDepth(RegionNode *RN) {
+  if (RN->isSubRegion()) {
+    Region *SubR = RN->getNodeAs<Region>();
+    return LI->getLoopDepth(SubR->getExit());
+  }
+
+  return LI->getLoopDepth(RN->getEntry());
+}
+
 /// Build up the general order of nodes
 void StructurizeCFG::orderNodes() {
   ReversePostOrderTraversal<Region*> RPOT(ParentRegion);
@@ -310,16 +333,15 @@ void StructurizeCFG::orderNodes() {
   // to what we want.  The only problem with it is that sometimes backedges
   // for outer loops will be visited before backedges for inner loops.
   for (RegionNode *RN : RPOT) {
-    BasicBlock *BB = RN->getEntry();
-    Loop *Loop = LI->getLoopFor(BB);
+    Loop *Loop = getAdjustedLoop(RN);
     ++LoopBlocks[Loop];
   }
 
   unsigned CurrentLoopDepth = 0;
   Loop *CurrentLoop = nullptr;
   for (auto I = RPOT.begin(), E = RPOT.end(); I != E; ++I) {
-    BasicBlock *BB = (*I)->getEntry();
-    unsigned LoopDepth = LI->getLoopDepth(BB);
+    RegionNode *RN = cast<RegionNode>(*I);
+    unsigned LoopDepth = getAdjustedLoopDepth(RN);
 
     if (is_contained(Order, *I))
       continue;
@@ -331,15 +353,14 @@ void StructurizeCFG::orderNodes() {
       auto LoopI = I;
       while (unsigned &BlockCount = LoopBlocks[CurrentLoop]) {
         LoopI++;
-        BasicBlock *LoopBB = (*LoopI)->getEntry();
-        if (LI->getLoopFor(LoopBB) == CurrentLoop) {
+        if (getAdjustedLoop(cast<RegionNode>(*LoopI)) == CurrentLoop) {
           --BlockCount;
           Order.push_back(*LoopI);
         }
       }
     }
 
-    CurrentLoop = LI->getLoopFor(BB);
+    CurrentLoop = getAdjustedLoop(RN);
     if (CurrentLoop)
       LoopBlocks[CurrentLoop]--;
 
@@ -380,8 +401,9 @@ Value *StructurizeCFG::invert(Value *Condition) {
     return ConstantExpr::getNot(C);
 
   // Second: If the condition is already inverted, return the original value
-  if (match(Condition, m_Not(m_Value(Condition))))
-    return Condition;
+  Value *NotCondition;
+  if (match(Condition, m_Not(m_Value(NotCondition))))
+    return NotCondition;
 
   if (Instruction *Inst = dyn_cast<Instruction>(Condition)) {
     // Third: Check all the users for an invert
@@ -489,10 +511,10 @@ void StructurizeCFG::collectInfos() {
   Visited.clear();
 
   for (RegionNode *RN : reverse(Order)) {
-    DEBUG(dbgs() << "Visiting: "
-                 << (RN->isSubRegion() ? "SubRegion with entry: " : "")
-                 << RN->getEntry()->getName() << " Loop Depth: "
-                 << LI->getLoopDepth(RN->getEntry()) << "\n");
+    LLVM_DEBUG(dbgs() << "Visiting: "
+                      << (RN->isSubRegion() ? "SubRegion with entry: " : "")
+                      << RN->getEntry()->getName() << " Loop Depth: "
+                      << LI->getLoopDepth(RN->getEntry()) << "\n");
 
     // Analyze all the conditions leading to a node
     gatherPredicates(RN);
@@ -858,7 +880,7 @@ void StructurizeCFG::createFlow() {
 }
 
 /// Handle a rare case where the disintegrated nodes instructions
-/// no longer dominate all their uses. Not sure if this is really nessasary
+/// no longer dominate all their uses. Not sure if this is really necessary
 void StructurizeCFG::rebuildSSA() {
   SSAUpdater Updater;
   for (BasicBlock *BB : ParentRegion->blocks())
@@ -901,8 +923,8 @@ static bool hasOnlyUniformBranches(Region *R, unsigned UniformMDKindID,
 
       if (!DA.isUniform(Br))
         return false;
-      DEBUG(dbgs() << "BB: " << Br->getParent()->getName()
-                   << " has uniform terminator\n");
+      LLVM_DEBUG(dbgs() << "BB: " << Br->getParent()->getName()
+                        << " has uniform terminator\n");
     } else {
       // Explicitly refuse to treat regions as uniform if they have non-uniform
       // subregions. We cannot rely on DivergenceAnalysis for branches in
@@ -943,7 +965,8 @@ bool StructurizeCFG::runOnRegion(Region *R, RGPassManager &RGM) {
     DA = &getAnalysis<DivergenceAnalysis>();
 
     if (hasOnlyUniformBranches(R, UniformMDKindID, *DA)) {
-      DEBUG(dbgs() << "Skipping region with uniform control flow: " << *R << '\n');
+      LLVM_DEBUG(dbgs() << "Skipping region with uniform control flow: " << *R
+                        << '\n');
 
       // Mark all direct child block terminators as having been treated as
       // uniform. To account for a possible future in which non-uniform

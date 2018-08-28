@@ -16,6 +16,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/MC/MCInstrDesc.h"
+#include "llvm/Support/AMDHSAKernelDescriptor.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cstdint>
@@ -25,24 +26,33 @@
 namespace llvm {
 
 class Argument;
+class AMDGPUSubtarget;
 class FeatureBitset;
 class Function;
 class GlobalValue;
-class MachineMemOperand;
 class MCContext;
 class MCRegisterClass;
 class MCRegisterInfo;
 class MCSection;
 class MCSubtargetInfo;
+class MachineMemOperand;
+class SISubtarget;
 class Triple;
 
 namespace AMDGPU {
+
+#define GET_MIMGBaseOpcode_DECL
+#define GET_MIMGDim_DECL
+#define GET_MIMGEncoding_DECL
+#include "AMDGPUGenSearchableTables.inc"
+
 namespace IsaInfo {
 
 enum {
   // The closed Vulkan driver sets 96, which limits the wave count to 8 but
   // doesn't spill SGPRs as much as when 80 is set.
-  FIXED_NUM_SGPRS_FOR_INIT_BUG = 96
+  FIXED_NUM_SGPRS_FOR_INIT_BUG = 96,
+  TRAP_NUM_SGPRS = 16
 };
 
 /// Instruction set architecture version.
@@ -58,9 +68,9 @@ IsaVersion getIsaVersion(const FeatureBitset &Features);
 /// Streams isa version string for given subtarget \p STI into \p Stream.
 void streamIsaVersion(const MCSubtargetInfo *STI, raw_ostream &Stream);
 
-/// \returns True if given subtarget \p Features support code object version 3,
+/// \returns True if given subtarget \p STI supports code object version 3,
 /// false otherwise.
-bool hasCodeObjectV3(const FeatureBitset &Features);
+bool hasCodeObjectV3(const MCSubtargetInfo *STI);
 
 /// \returns Wavefront size for given subtarget \p Features.
 unsigned getWavefrontSize(const FeatureBitset &Features);
@@ -92,7 +102,7 @@ unsigned getMinWavesPerEU(const FeatureBitset &Features);
 
 /// \returns Maximum number of waves per execution unit for given subtarget \p
 /// Features without any kind of limitation.
-unsigned getMaxWavesPerEU(const FeatureBitset &Features);
+unsigned getMaxWavesPerEU();
 
 /// \returns Maximum number of waves per execution unit for given subtarget \p
 /// Features and limited by given \p FlatWorkGroupSize.
@@ -131,6 +141,22 @@ unsigned getMinNumSGPRs(const FeatureBitset &Features, unsigned WavesPerEU);
 unsigned getMaxNumSGPRs(const FeatureBitset &Features, unsigned WavesPerEU,
                         bool Addressable);
 
+/// \returns Number of extra SGPRs implicitly required by given subtarget \p
+/// Features when the given special registers are used.
+unsigned getNumExtraSGPRs(const FeatureBitset &Features, bool VCCUsed,
+                          bool FlatScrUsed, bool XNACKUsed);
+
+/// \returns Number of extra SGPRs implicitly required by given subtarget \p
+/// Features when the given special registers are used. XNACK is inferred from
+/// \p Features.
+unsigned getNumExtraSGPRs(const FeatureBitset &Features, bool VCCUsed,
+                          bool FlatScrUsed);
+
+/// \returns Number of SGPR blocks needed for given subtarget \p Features when
+/// \p NumSGPRs are used. \p NumSGPRs should already include any special
+/// register counts.
+unsigned getNumSGPRBlocks(const FeatureBitset &Features, unsigned NumSGPRs);
+
 /// \returns VGPR allocation granularity for given subtarget \p Features.
 unsigned getVGPRAllocGranule(const FeatureBitset &Features);
 
@@ -151,24 +177,56 @@ unsigned getMinNumVGPRs(const FeatureBitset &Features, unsigned WavesPerEU);
 /// execution unit requirement for given subtarget \p Features.
 unsigned getMaxNumVGPRs(const FeatureBitset &Features, unsigned WavesPerEU);
 
+/// \returns Number of VGPR blocks needed for given subtarget \p Features when
+/// \p NumVGPRs are used.
+unsigned getNumVGPRBlocks(const FeatureBitset &Features, unsigned NumSGPRs);
+
 } // end namespace IsaInfo
 
 LLVM_READONLY
 int16_t getNamedOperandIdx(uint16_t Opcode, uint16_t NamedIdx);
 
-LLVM_READONLY
-int getMaskedMIMGOp(const MCInstrInfo &MII,
-                    unsigned Opc, unsigned NewChannels);
+struct MIMGBaseOpcodeInfo {
+  MIMGBaseOpcode BaseOpcode;
+  bool Store;
+  bool Atomic;
+  bool AtomicX2;
+  bool Sampler;
+
+  uint8_t NumExtraArgs;
+  bool Gradients;
+  bool Coordinates;
+  bool LodOrClampOrMip;
+  bool HasD16;
+};
 
 LLVM_READONLY
-int getMaskedMIMGAtomicOp(const MCInstrInfo &MII,
-                          unsigned Opc, unsigned NewChannels);
+const MIMGBaseOpcodeInfo *getMIMGBaseOpcodeInfo(unsigned BaseOpcode);
+
+struct MIMGDimInfo {
+  MIMGDim Dim;
+  uint8_t NumCoords;
+  uint8_t NumGradients;
+  bool DA;
+};
+
+LLVM_READONLY
+const MIMGDimInfo *getMIMGDimInfo(unsigned Dim);
+
+LLVM_READONLY
+int getMIMGOpcode(unsigned BaseOpcode, unsigned MIMGEncoding,
+                  unsigned VDataDwords, unsigned VAddrDwords);
+
+LLVM_READONLY
+int getMaskedMIMGOp(unsigned Opc, unsigned NewChannels);
 
 LLVM_READONLY
 int getMCOpcode(uint16_t Opcode, unsigned Gen);
 
 void initDefaultAMDKernelCodeT(amd_kernel_code_t &Header,
                                const FeatureBitset &Features);
+
+amdhsa::kernel_descriptor_t getDefaultAmdhsaKernelDescriptor();
 
 bool isGroupSegment(const GlobalValue *GV);
 bool isGlobalSegment(const GlobalValue *GV);
@@ -384,6 +442,12 @@ int64_t getSMRDEncodedOffset(const MCSubtargetInfo &ST, int64_t ByteOffset);
 /// offset field.  \p ByteOffset should be the offset in bytes and
 /// not the encoded offset.
 bool isLegalSMRDImmOffset(const MCSubtargetInfo &ST, int64_t ByteOffset);
+
+// Given Imm, split it into the values to put into the SOffset and ImmOffset
+// fields in an MUBUF instruction. Return false if it is not possible (due to a
+// hardware bug needing a workaround).
+bool splitMUBUFOffset(uint32_t Imm, uint32_t &SOffset, uint32_t &ImmOffset,
+                      const SISubtarget *Subtarget);
 
 /// \returns true if the intrinsic is divergent
 bool isIntrinsicSourceOfDivergence(unsigned IntrID);

@@ -87,8 +87,11 @@ enum : uint64_t {
   // Is a packed VOP3P instruction.
   IsPacked = UINT64_C(1) << 49,
 
-  // "d16" bit set or not.
-  D16 = UINT64_C(1) << 50
+  // Is a D16 buffer instruction.
+  D16Buf = UINT64_C(1) << 50,
+
+  // Uses floating point double precision rounding mode
+  FPDPRounding = UINT64_C(1) << 51
 };
 
 // v_cmp_class_* etc. use a 10-bit mask for what operation is checked.

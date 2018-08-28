@@ -316,7 +316,7 @@ namespace {
            ReturnBlock(1, os) {
       this->os = os;
 
-      DEBUG(dbgs() << "Function: " << getFunctionName(SP) << "\n");
+      LLVM_DEBUG(dbgs() << "Function: " << getFunctionName(SP) << "\n");
 
       uint32_t i = 0;
       for (auto &BB : *F) {
@@ -384,7 +384,7 @@ namespace {
       for (int i = 0, e = Blocks.size() + 1; i != e; ++i) {
         write(0);  // No flags on our blocks.
       }
-      DEBUG(dbgs() << Blocks.size() << " blocks.\n");
+      LLVM_DEBUG(dbgs() << Blocks.size() << " blocks.\n");
 
       // Emit edges between blocks.
       if (Blocks.empty()) return;
@@ -397,8 +397,8 @@ namespace {
         write(Block.OutEdges.size() * 2 + 1);
         write(Block.Number);
         for (int i = 0, e = Block.OutEdges.size(); i != e; ++i) {
-          DEBUG(dbgs() << Block.Number << " -> " << Block.OutEdges[i]->Number
-                       << "\n");
+          LLVM_DEBUG(dbgs() << Block.Number << " -> "
+                            << Block.OutEdges[i]->Number << "\n");
           write(Block.OutEdges[i]->Number);
           write(0);  // no flags
         }
@@ -504,11 +504,11 @@ static bool functionHasLines(Function &F) {
   return false;
 }
 
-static bool isUsingFuncletBasedEH(Function &F) {
+static bool isUsingScopeBasedEH(Function &F) {
   if (!F.hasPersonalityFn()) return false;
 
   EHPersonality Personality = classifyEHPersonality(F.getPersonalityFn());
-  return isFuncletEHPersonality(Personality);
+  return isScopedEHPersonality(Personality);
 }
 
 static bool shouldKeepInEntry(BasicBlock::iterator It) {
@@ -551,8 +551,8 @@ void GCOVProfiler::emitProfileNotes() {
       DISubprogram *SP = F.getSubprogram();
       if (!SP) continue;
       if (!functionHasLines(F)) continue;
-      // TODO: Functions using funclet-based EH are currently not supported.
-      if (isUsingFuncletBasedEH(F)) continue;
+      // TODO: Functions using scope-based EH are currently not supported.
+      if (isUsingScopeBasedEH(F)) continue;
 
       // gcov expects every function to start with an entry block that has a
       // single successor, so split the entry block to make sure of that.
@@ -630,8 +630,8 @@ bool GCOVProfiler::emitProfileArcs() {
       DISubprogram *SP = F.getSubprogram();
       if (!SP) continue;
       if (!functionHasLines(F)) continue;
-      // TODO: Functions using funclet-based EH are currently not supported.
-      if (isUsingFuncletBasedEH(F)) continue;
+      // TODO: Functions using scope-based EH are currently not supported.
+      if (isUsingScopeBasedEH(F)) continue;
       if (!Result) Result = true;
 
       unsigned Edges = 0;

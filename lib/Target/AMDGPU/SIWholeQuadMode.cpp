@@ -60,6 +60,7 @@
 #include "AMDGPUSubtarget.h"
 #include "SIInstrInfo.h"
 #include "SIMachineFunctionInfo.h"
+#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/PostOrderIterator.h"
 #include "llvm/ADT/SmallVector.h"
@@ -684,7 +685,8 @@ void SIWholeQuadMode::processBlock(MachineBasicBlock &MBB, unsigned LiveMaskReg,
   if (!isEntry && BI.Needs == StateWQM && BI.OutNeeds != StateExact)
     return;
 
-  DEBUG(dbgs() << "\nProcessing block " << printMBBReference(MBB) << ":\n");
+  LLVM_DEBUG(dbgs() << "\nProcessing block " << printMBBReference(MBB)
+                    << ":\n");
 
   unsigned SavedWQMReg = 0;
   unsigned SavedNonWWMReg = 0;
@@ -887,7 +889,7 @@ bool SIWholeQuadMode::runOnMachineFunction(MachineFunction &MF) {
     }
   }
 
-  DEBUG(printInfo());
+  LLVM_DEBUG(printInfo());
 
   lowerCopyInstrs();
 

@@ -22,6 +22,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instruction.h"
@@ -202,12 +203,10 @@ BranchProbabilityInfo::updatePostDominatedByColdCall(const BasicBlock *BB) {
 /// unreachable-terminated block as extremely unlikely.
 bool BranchProbabilityInfo::calcUnreachableHeuristics(const BasicBlock *BB) {
   const TerminatorInst *TI = BB->getTerminator();
+  (void) TI;
   assert(TI->getNumSuccessors() > 1 && "expected more than one successor!");
-
-  // Return false here so that edge weights for InvokeInst could be decided
-  // in calcInvokeHeuristics().
-  if (isa<InvokeInst>(TI))
-    return false;
+  assert(!isa<InvokeInst>(TI) &&
+         "Invokes should have already been handled by calcInvokeHeuristics");
 
   SmallVector<unsigned, 4> UnreachableEdges;
   SmallVector<unsigned, 4> ReachableEdges;
@@ -350,12 +349,10 @@ bool BranchProbabilityInfo::calcMetadataWeights(const BasicBlock *BB) {
 /// Return false, otherwise.
 bool BranchProbabilityInfo::calcColdCallHeuristics(const BasicBlock *BB) {
   const TerminatorInst *TI = BB->getTerminator();
+  (void) TI;
   assert(TI->getNumSuccessors() > 1 && "expected more than one successor!");
-
-  // Return false here so that edge weights for InvokeInst could be decided
-  // in calcInvokeHeuristics().
-  if (isa<InvokeInst>(TI))
-    return false;
+  assert(!isa<InvokeInst>(TI) &&
+         "Invokes should have already been handled by calcInvokeHeuristics");
 
   // Determine which successors are post-dominated by a cold block.
   SmallVector<unsigned, 4> ColdEdges;
@@ -503,13 +500,13 @@ computeUnlikelySuccessors(const BasicBlock *BB, Loop *L,
   PHINode *CmpPHI = dyn_cast<PHINode>(CmpLHS);
   Constant *CmpConst = dyn_cast<Constant>(CI->getOperand(1));
   // Collect the instructions until we hit a PHI
-  std::list<BinaryOperator*> InstChain;
+  SmallVector<BinaryOperator *, 1> InstChain;
   while (!CmpPHI && CmpLHS && isa<BinaryOperator>(CmpLHS) &&
          isa<Constant>(CmpLHS->getOperand(1))) {
     // Stop if the chain extends outside of the loop
     if (!L->contains(CmpLHS))
       return;
-    InstChain.push_front(dyn_cast<BinaryOperator>(CmpLHS));
+    InstChain.push_back(cast<BinaryOperator>(CmpLHS));
     CmpLHS = dyn_cast<Instruction>(CmpLHS->getOperand(0));
     if (CmpLHS)
       CmpPHI = dyn_cast<PHINode>(CmpLHS);
@@ -545,10 +542,9 @@ computeUnlikelySuccessors(const BasicBlock *BB, Loop *L,
           std::find(succ_begin(BB), succ_end(BB), B) == succ_end(BB))
         continue;
       // First collapse InstChain
-      for (Instruction *I : InstChain) {
+      for (Instruction *I : llvm::reverse(InstChain)) {
         CmpLHSConst = ConstantExpr::get(I->getOpcode(), CmpLHSConst,
-                                        dyn_cast<Constant>(I->getOperand(1)),
-                                        true);
+                                        cast<Constant>(I->getOperand(1)), true);
         if (!CmpLHSConst)
           break;
       }
@@ -908,8 +904,9 @@ void BranchProbabilityInfo::setEdgeProbability(const BasicBlock *Src,
                                                BranchProbability Prob) {
   Probs[std::make_pair(Src, IndexInSuccessors)] = Prob;
   Handles.insert(BasicBlockCallbackVH(Src, this));
-  DEBUG(dbgs() << "set edge " << Src->getName() << " -> " << IndexInSuccessors
-               << " successor probability to " << Prob << "\n");
+  LLVM_DEBUG(dbgs() << "set edge " << Src->getName() << " -> "
+                    << IndexInSuccessors << " successor probability to " << Prob
+                    << "\n");
 }
 
 raw_ostream &
@@ -934,8 +931,8 @@ void BranchProbabilityInfo::eraseBlock(const BasicBlock *BB) {
 
 void BranchProbabilityInfo::calculate(const Function &F, const LoopInfo &LI,
                                       const TargetLibraryInfo *TLI) {
-  DEBUG(dbgs() << "---- Branch Probability Info : " << F.getName()
-               << " ----\n\n");
+  LLVM_DEBUG(dbgs() << "---- Branch Probability Info : " << F.getName()
+                    << " ----\n\n");
   LastF = &F; // Store the last function we ran on for printing.
   assert(PostDominatedByUnreachable.empty());
   assert(PostDominatedByColdCall.empty());
@@ -953,24 +950,27 @@ void BranchProbabilityInfo::calculate(const Function &F, const LoopInfo &LI,
     if (Scc.size() == 1)
       continue;
 
-    DEBUG(dbgs() << "BPI: SCC " << SccNum << ":");
+    LLVM_DEBUG(dbgs() << "BPI: SCC " << SccNum << ":");
     for (auto *BB : Scc) {
-      DEBUG(dbgs() << " " << BB->getName());
+      LLVM_DEBUG(dbgs() << " " << BB->getName());
       SccI.SccNums[BB] = SccNum;
     }
-    DEBUG(dbgs() << "\n");
+    LLVM_DEBUG(dbgs() << "\n");
   }
 
   // Walk the basic blocks in post-order so that we can build up state about
   // the successors of a block iteratively.
   for (auto BB : post_order(&F.getEntryBlock())) {
-    DEBUG(dbgs() << "Computing probabilities for " << BB->getName() << "\n");
+    LLVM_DEBUG(dbgs() << "Computing probabilities for " << BB->getName()
+                      << "\n");
     updatePostDominatedByUnreachable(BB);
     updatePostDominatedByColdCall(BB);
     // If there is no at least two successors, no sense to set probability.
     if (BB->getTerminator()->getNumSuccessors() < 2)
       continue;
     if (calcMetadataWeights(BB))
+      continue;
+    if (calcInvokeHeuristics(BB))
       continue;
     if (calcUnreachableHeuristics(BB))
       continue;
@@ -984,7 +984,6 @@ void BranchProbabilityInfo::calculate(const Function &F, const LoopInfo &LI,
       continue;
     if (calcFloatingPointHeuristics(BB))
       continue;
-    calcInvokeHeuristics(BB);
   }
 
   PostDominatedByUnreachable.clear();
@@ -999,6 +998,10 @@ void BranchProbabilityInfo::calculate(const Function &F, const LoopInfo &LI,
 
 void BranchProbabilityInfoWrapperPass::getAnalysisUsage(
     AnalysisUsage &AU) const {
+  // We require DT so it's available when LI is available. The LI updating code
+  // asserts that DT is also present so if we don't make sure that we have DT
+  // here, that assert will trigger.
+  AU.addRequired<DominatorTreeWrapperPass>();
   AU.addRequired<LoopInfoWrapperPass>();
   AU.addRequired<TargetLibraryInfoWrapperPass>();
   AU.setPreservesAll();

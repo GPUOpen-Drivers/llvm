@@ -35,7 +35,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Instrumentation.h"
-#include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
 
@@ -243,6 +242,7 @@ private:
   GlobalVariable *Function8bitCounterArray;  // for inline-8bit-counters.
   GlobalVariable *FunctionPCsArray;  // for pc-table.
   SmallVector<GlobalValue *, 20> GlobalsToAppendToUsed;
+  SmallVector<GlobalValue *, 20> GlobalsToAppendToCompilerUsed;
 
   SanitizerCoverageOptions Options;
 };
@@ -405,6 +405,7 @@ bool SanitizerCoverageModule::runOnModule(Module &M) {
   // so we need to prevent them from being dead stripped.
   if (TargetTriple.isOSBinFormatMachO())
     appendToUsed(M, GlobalsToAppendToUsed);
+  appendToCompilerUsed(M, GlobalsToAppendToCompilerUsed);
   return true;
 }
 
@@ -598,7 +599,9 @@ void SanitizerCoverageModule::CreateFunctionLocalArrays(
   }
   if (Options.PCTable) {
     FunctionPCsArray = CreatePCArray(F, AllBlocks);
-    GlobalsToAppendToUsed.push_back(FunctionPCsArray);
+    GlobalsToAppendToCompilerUsed.push_back(FunctionPCsArray);
+    MDNode *MD = MDNode::get(F.getContext(), ValueAsMetadata::get(&F));
+    FunctionPCsArray->addMetadata(LLVMContext::MD_associated, *MD);
   }
 }
 

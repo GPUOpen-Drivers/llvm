@@ -138,6 +138,26 @@ public:
   /// on the MemoryAccess for that store/load.
   void removeMemoryAccess(MemoryAccess *);
 
+  /// Remove MemoryAccess for a given instruction, if a MemoryAccess exists.
+  /// This should be called when an instruction (load/store) is deleted from
+  /// the program.
+  void removeMemoryAccess(const Instruction *I) {
+    if (MemoryAccess *MA = MSSA->getMemoryAccess(I))
+      removeMemoryAccess(MA);
+  }
+
+  /// Remove all MemoryAcceses in a set of BasicBlocks about to be deleted.
+  /// Assumption we make here: all uses of deleted defs and phi must either
+  /// occur in blocks about to be deleted (thus will be deleted as well), or
+  /// they occur in phis that will simply lose an incoming value.
+  /// Deleted blocks still have successor info, but their predecessor edges and
+  /// Phi nodes may already be updated. Instructions in DeadBlocks should be
+  /// deleted after this call.
+  void removeBlocks(const SmallPtrSetImpl<BasicBlock *> &DeadBlocks);
+
+  /// Get handle on MemorySSA.
+  MemorySSA* getMemorySSA() const { return MSSA; }
+
 private:
   // Move What before Where in the MemorySSA IR.
   template <class WhereType>

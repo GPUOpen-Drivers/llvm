@@ -1,6 +1,18 @@
+//===---------------------- RetireControlUnit.cpp ---------------*- C++ -*-===//
+//
+//                     The LLVM Compiler Infrastructure
+//
+// This file is distributed under the University of Illinois Open Source
+// License. See LICENSE.TXT for details.
+//
+//===----------------------------------------------------------------------===//
+/// \file
+///
+/// This file simulates the hardware responsible for retiring instructions.
+///
+//===----------------------------------------------------------------------===//
+
 #include "RetireControlUnit.h"
-#include "Dispatch.h"
-#include "llvm/MC/MCSchedule.h"
 #include "llvm/Support/Debug.h"
 
 using namespace llvm;
@@ -9,10 +21,9 @@ using namespace llvm;
 
 namespace mca {
 
-RetireControlUnit::RetireControlUnit(const llvm::MCSchedModel &SM,
-                                     DispatchUnit *DU)
+RetireControlUnit::RetireControlUnit(const llvm::MCSchedModel &SM)
     : NextAvailableSlotIdx(0), CurrentInstructionSlotIdx(0),
-      AvailableSlots(SM.MicroOpBufferSize), MaxRetirePerCycle(0), Owner(DU) {
+      AvailableSlots(SM.MicroOpBufferSize), MaxRetirePerCycle(0) {
   // Check if the scheduling model provides extra information about the machine
   // processor. If so, then use that information to set the reorder buffer size
   // and the maximum number of instructions retired per cycle.
@@ -28,7 +39,8 @@ RetireControlUnit::RetireControlUnit(const llvm::MCSchedModel &SM,
 }
 
 // Reserves a number of slots, and returns a new token.
-unsigned RetireControlUnit::reserveSlot(const InstRef &IR, unsigned NumMicroOps) {
+unsigned RetireControlUnit::reserveSlot(const InstRef &IR,
+                                        unsigned NumMicroOps) {
   assert(isAvailable(NumMicroOps));
   unsigned NormalizedQuantity =
       std::min(NumMicroOps, static_cast<unsigned>(Queue.size()));
@@ -44,25 +56,19 @@ unsigned RetireControlUnit::reserveSlot(const InstRef &IR, unsigned NumMicroOps)
   return TokenID;
 }
 
-void RetireControlUnit::cycleEvent() {
-  if (isEmpty())
-    return;
+const RetireControlUnit::RUToken &RetireControlUnit::peekCurrentToken() const {
+  return Queue[CurrentInstructionSlotIdx];
+}
 
-  unsigned NumRetired = 0;
-  while (!isEmpty()) {
-    if (MaxRetirePerCycle != 0 && NumRetired == MaxRetirePerCycle)
-      break;
-    RUToken &Current = Queue[CurrentInstructionSlotIdx];
-    assert(Current.NumSlots && "Reserved zero slots?");
-    assert(Current.IR.isValid() && "Invalid RUToken in the RCU queue.");
-    if (!Current.Executed)
-      break;
-    Owner->notifyInstructionRetired(Current.IR);
-    CurrentInstructionSlotIdx += Current.NumSlots;
-    CurrentInstructionSlotIdx %= Queue.size();
-    AvailableSlots += Current.NumSlots;
-    NumRetired++;
-  }
+void RetireControlUnit::consumeCurrentToken() {
+  const RetireControlUnit::RUToken &Current = peekCurrentToken();
+  assert(Current.NumSlots && "Reserved zero slots?");
+  assert(Current.IR.isValid() && "Invalid RUToken in the RCU queue.");
+
+  // Update the slot index to be the next item in the circular queue.
+  CurrentInstructionSlotIdx += Current.NumSlots;
+  CurrentInstructionSlotIdx %= Queue.size();
+  AvailableSlots += Current.NumSlots;
 }
 
 void RetireControlUnit::onInstructionExecuted(unsigned TokenID) {

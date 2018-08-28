@@ -202,6 +202,12 @@ public:
   bool getO0WantsFastISel() { return O0WantsFastISel; }
   void setO0WantsFastISel(bool Enable) { O0WantsFastISel = Enable; }
   void setGlobalISel(bool Enable) { Options.EnableGlobalISel = Enable; }
+  void setMachineOutliner(bool Enable) {
+    Options.EnableMachineOutliner = Enable;
+  }
+  void setSupportsDefaultOutlining(bool Enable) {
+    Options.SupportsDefaultOutlining = Enable;
+  }
 
   bool shouldPrintMachineCode() const { return Options.PrintMachineCode; }
 
@@ -252,7 +258,7 @@ public:
   /// \p MMI is an optional parameter that, if set to non-nullptr,
   /// will be used to set the MachineModuloInfo for this PM.
   virtual bool addPassesToEmitFile(PassManagerBase &, raw_pwrite_stream &,
-                                   CodeGenFileType,
+                                   raw_pwrite_stream *, CodeGenFileType,
                                    bool /*DisableVerify*/ = true,
                                    MachineModuleInfo *MMI = nullptr) {
     return true;
@@ -321,7 +327,8 @@ public:
   /// \p MMI is an optional parameter that, if set to non-nullptr,
   /// will be used to set the MachineModuloInfofor this PM.
   bool addPassesToEmitFile(PassManagerBase &PM, raw_pwrite_stream &Out,
-                           CodeGenFileType FileType, bool DisableVerify = true,
+                           raw_pwrite_stream *DwoOut, CodeGenFileType FileType,
+                           bool DisableVerify = true,
                            MachineModuleInfo *MMI = nullptr) override;
 
   /// Add passes to the specified pass manager to get machine code emitted with
@@ -341,7 +348,8 @@ public:
   /// Adds an AsmPrinter pass to the pipeline that prints assembly or
   /// machine code from the MI representation.
   bool addAsmPrinter(PassManagerBase &PM, raw_pwrite_stream &Out,
-                     CodeGenFileType FileTYpe, MCContext &Context);
+                     raw_pwrite_stream *DwoOut, CodeGenFileType FileTYpe,
+                     MCContext &Context);
 };
 
 } // end namespace llvm

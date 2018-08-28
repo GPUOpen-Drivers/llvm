@@ -25,7 +25,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallSet.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AliasAnalysis.h"
@@ -179,7 +179,7 @@ public:
     // forward and backward dependences qualify.  Disqualify loads that have
     // other unknown dependences.
 
-    SmallSet<Instruction *, 4> LoadsWithUnknownDepedence;
+    SmallPtrSet<Instruction *, 4> LoadsWithUnknownDepedence;
 
     for (const auto &Dep : *Deps) {
       Instruction *Source = Dep.getSource(LAI);
@@ -285,9 +285,11 @@ public:
 
     Candidates.remove_if([&](const StoreToLoadForwardingCandidate &Cand) {
       if (LoadToSingleCand[Cand.Load] != &Cand) {
-        DEBUG(dbgs() << "Removing from candidates: \n" << Cand
-                     << "  The load may have multiple stores forwarding to "
-                     << "it\n");
+        LLVM_DEBUG(
+            dbgs() << "Removing from candidates: \n"
+                   << Cand
+                   << "  The load may have multiple stores forwarding to "
+                   << "it\n");
         return true;
       }
       return false;
@@ -300,7 +302,7 @@ public:
   /// We need a check if one is a pointer for a candidate load and the other is
   /// a pointer for a possibly intervening store.
   bool needsChecking(unsigned PtrIdx1, unsigned PtrIdx2,
-                     const SmallSet<Value *, 4> &PtrsWrittenOnFwdingPath,
+                     const SmallPtrSet<Value *, 4> &PtrsWrittenOnFwdingPath,
                      const std::set<Value *> &CandLoadPtrs) {
     Value *Ptr1 =
         LAI.getRuntimePointerChecking()->getPointerInfo(PtrIdx1).PointerValue;
@@ -314,7 +316,7 @@ public:
   /// forwarding store to a load.
   ///
   /// These pointers need to be alias-checked against the forwarding candidates.
-  SmallSet<Value *, 4> findPointersWrittenOnForwardingPath(
+  SmallPtrSet<Value *, 4> findPointersWrittenOnForwardingPath(
       const SmallVectorImpl<StoreToLoadForwardingCandidate> &Candidates) {
     // From FirstStore to LastLoad neither of the elimination candidate loads
     // should overlap with any of the stores.
@@ -352,7 +354,7 @@ public:
     // We're looking for stores after the first forwarding store until the end
     // of the loop, then from the beginning of the loop until the last
     // forwarded-to load.  Collect the pointer for the stores.
-    SmallSet<Value *, 4> PtrsWrittenOnFwdingPath;
+    SmallPtrSet<Value *, 4> PtrsWrittenOnFwdingPath;
 
     auto InsertStorePtr = [&](Instruction *I) {
       if (auto *S = dyn_cast<StoreInst>(I))
@@ -372,11 +374,11 @@ public:
   SmallVector<RuntimePointerChecking::PointerCheck, 4> collectMemchecks(
       const SmallVectorImpl<StoreToLoadForwardingCandidate> &Candidates) {
 
-    SmallSet<Value *, 4> PtrsWrittenOnFwdingPath =
+    SmallPtrSet<Value *, 4> PtrsWrittenOnFwdingPath =
         findPointersWrittenOnForwardingPath(Candidates);
 
     // Collect the pointers of the candidate loads.
-    // FIXME: SmallSet does not work with std::inserter.
+    // FIXME: SmallPtrSet does not work with std::inserter.
     std::set<Value *> CandLoadPtrs;
     transform(Candidates,
                    std::inserter(CandLoadPtrs, CandLoadPtrs.begin()),
@@ -395,8 +397,9 @@ public:
               return false;
             });
 
-    DEBUG(dbgs() << "\nPointer Checks (count: " << Checks.size() << "):\n");
-    DEBUG(LAI.getRuntimePointerChecking()->printChecks(dbgs(), Checks));
+    LLVM_DEBUG(dbgs() << "\nPointer Checks (count: " << Checks.size()
+                      << "):\n");
+    LLVM_DEBUG(LAI.getRuntimePointerChecking()->printChecks(dbgs(), Checks));
 
     return Checks;
   }
@@ -440,8 +443,8 @@ public:
   /// Top-level driver for each loop: find store->load forwarding
   /// candidates, add run-time checks and perform transformation.
   bool processLoop() {
-    DEBUG(dbgs() << "\nIn \"" << L->getHeader()->getParent()->getName()
-                 << "\" checking " << *L << "\n");
+    LLVM_DEBUG(dbgs() << "\nIn \"" << L->getHeader()->getParent()->getName()
+                      << "\" checking " << *L << "\n");
 
     // Look for store-to-load forwarding cases across the
     // backedge. E.g.:
@@ -480,7 +483,7 @@ public:
     SmallVector<StoreToLoadForwardingCandidate, 4> Candidates;
     unsigned NumForwarding = 0;
     for (const StoreToLoadForwardingCandidate Cand : StoreToLoadDependences) {
-      DEBUG(dbgs() << "Candidate " << Cand);
+      LLVM_DEBUG(dbgs() << "Candidate " << Cand);
 
       // Make sure that the stored values is available everywhere in the loop in
       // the next iteration.
@@ -499,9 +502,10 @@ public:
         continue;
 
       ++NumForwarding;
-      DEBUG(dbgs()
-            << NumForwarding
-            << ". Valid store-to-load forwarding across the loop backedge\n");
+      LLVM_DEBUG(
+          dbgs()
+          << NumForwarding
+          << ". Valid store-to-load forwarding across the loop backedge\n");
       Candidates.push_back(Cand);
     }
     if (Candidates.empty())
@@ -514,25 +518,26 @@ public:
 
     // Too many checks are likely to outweigh the benefits of forwarding.
     if (Checks.size() > Candidates.size() * CheckPerElim) {
-      DEBUG(dbgs() << "Too many run-time checks needed.\n");
+      LLVM_DEBUG(dbgs() << "Too many run-time checks needed.\n");
       return false;
     }
 
     if (LAI.getPSE().getUnionPredicate().getComplexity() >
         LoadElimSCEVCheckThreshold) {
-      DEBUG(dbgs() << "Too many SCEV run-time checks needed.\n");
+      LLVM_DEBUG(dbgs() << "Too many SCEV run-time checks needed.\n");
       return false;
     }
 
     if (!Checks.empty() || !LAI.getPSE().getUnionPredicate().isAlwaysTrue()) {
       if (L->getHeader()->getParent()->optForSize()) {
-        DEBUG(dbgs() << "Versioning is needed but not allowed when optimizing "
-                        "for size.\n");
+        LLVM_DEBUG(
+            dbgs() << "Versioning is needed but not allowed when optimizing "
+                      "for size.\n");
         return false;
       }
 
       if (!L->isLoopSimplifyForm()) {
-        DEBUG(dbgs() << "Loop is not is loop-simplify form");
+        LLVM_DEBUG(dbgs() << "Loop is not is loop-simplify form");
         return false;
       }
 

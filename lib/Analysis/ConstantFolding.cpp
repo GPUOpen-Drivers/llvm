@@ -1392,6 +1392,8 @@ bool llvm::canConstantFoldCallTo(ImmutableCallSite CS, const Function *F) {
   case Intrinsic::fma:
   case Intrinsic::fmuladd:
   case Intrinsic::copysign:
+  case Intrinsic::launder_invariant_group:
+  case Intrinsic::strip_invariant_group:
   case Intrinsic::round:
   case Intrinsic::masked_load:
   case Intrinsic::sadd_with_overflow:
@@ -1594,9 +1596,21 @@ Constant *ConstantFoldScalarCall(StringRef Name, unsigned IntrinsicID, Type *Ty,
       if (IntrinsicID == Intrinsic::cos)
         return Constant::getNullValue(Ty);
       if (IntrinsicID == Intrinsic::bswap ||
-          IntrinsicID == Intrinsic::bitreverse)
+          IntrinsicID == Intrinsic::bitreverse ||
+          IntrinsicID == Intrinsic::launder_invariant_group ||
+          IntrinsicID == Intrinsic::strip_invariant_group)
         return Operands[0];
     }
+
+    if (isa<ConstantPointerNull>(Operands[0]) &&
+        Operands[0]->getType()->getPointerAddressSpace() == 0) {
+      // launder(null) == null == strip(null) iff in addrspace 0
+      if (IntrinsicID == Intrinsic::launder_invariant_group ||
+          IntrinsicID == Intrinsic::strip_invariant_group)
+        return Operands[0];
+      return nullptr;
+    }
+
     if (auto *Op = dyn_cast<ConstantFP>(Operands[0])) {
       if (IntrinsicID == Intrinsic::convert_to_fp16) {
         APFloat Val(Op->getValueAPF());

@@ -17,8 +17,7 @@ namespace AMDGPU {
 enum Fixups {
   /// 16-bit PC relative fixup for SOPP branch instructions.
   fixup_si_sopp_br = FirstTargetFixupKind,
-  /// 64-bit R_AMDGPU_SRDADDRESS
-  fixup_srd_address,
+
   // Marker
   LastTargetFixupKind,
   NumTargetFixupKinds = LastTargetFixupKind - FirstTargetFixupKind

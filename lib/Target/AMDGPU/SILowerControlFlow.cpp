@@ -51,6 +51,7 @@
 #include "AMDGPU.h"
 #include "AMDGPUSubtarget.h"
 #include "SIInstrInfo.h"
+#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/CodeGen/LiveIntervals.h"
@@ -452,8 +453,8 @@ void SILowerControlFlow::findMaskOperands(MachineInstr &MI, unsigned OpNo,
       return;
 
   for (const auto &SrcOp : Def->explicit_operands())
-    if (SrcOp.isUse() && (!SrcOp.isReg() ||
-        TargetRegisterInfo::isVirtualRegister(SrcOp.getReg()) ||
+    if (SrcOp.isReg() && SrcOp.isUse() &&
+        (TargetRegisterInfo::isVirtualRegister(SrcOp.getReg()) ||
         SrcOp.getReg() == AMDGPU::EXEC))
       Src.push_back(SrcOp);
 }

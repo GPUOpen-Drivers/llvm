@@ -218,6 +218,13 @@ def PPCsrl        : SDNode<"PPCISD::SRL"       , SDTIntShiftOp>;
 def PPCsra        : SDNode<"PPCISD::SRA"       , SDTIntShiftOp>;
 def PPCshl        : SDNode<"PPCISD::SHL"       , SDTIntShiftOp>;
 
+// Move 2 i64 values into a VSX register
+def PPCbuild_fp128: SDNode<"PPCISD::BUILD_FP128",
+                           SDTypeProfile<1, 2,
+                             [SDTCisFP<0>, SDTCisSameSizeAs<1,2>,
+                              SDTCisSameAs<1,2>]>,
+                           []>;
+
 // These are target-independent nodes, but have target-specific formats.
 def callseq_start : SDNode<"ISD::CALLSEQ_START", SDT_PPCCallSeqStart,
                            [SDNPHasChain, SDNPOutGlue]>;
@@ -3807,7 +3814,7 @@ def ICBI : XForm_1a<31, 982, (outs), (ins memrr:$src),
 def EnforceIEIO : XForm_24_eieio<31, 854, (outs), (ins),
                            "eieio", IIC_LdStLoad, []>;
 
-def WAIT : XForm_24_sync<31, 62, (outs), (ins i32imm:$L),
+def WAIT : XForm_24_sync<31, 30, (outs), (ins i32imm:$L),
                          "wait $L", IIC_LdStLoad, []>;
 
 def MBAR : XForm_mbar<31, 854, (outs), (ins u5imm:$MO),

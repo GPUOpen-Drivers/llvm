@@ -19,7 +19,6 @@
 #include "llvm/ADT/SetOperations.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringRef.h"
@@ -28,7 +27,7 @@
 #include "llvm/Analysis/EHPersonalities.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
-#include "llvm/Analysis/Utils/Local.h"
+#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
@@ -845,9 +844,9 @@ bool SimplifyCFGOpt::SimplifyEqualityComparisonWithOnlyPredecessor(
       // Remove PHI node entries for the dead edge.
       ThisCases[0].Dest->removePredecessor(TI->getParent());
 
-      DEBUG(dbgs() << "Threading pred instr: " << *Pred->getTerminator()
-                   << "Through successor TI: " << *TI << "Leaving: " << *NI
-                   << "\n");
+      LLVM_DEBUG(dbgs() << "Threading pred instr: " << *Pred->getTerminator()
+                        << "Through successor TI: " << *TI << "Leaving: " << *NI
+                        << "\n");
 
       EraseTerminatorInstAndDCECond(TI);
       return true;
@@ -859,8 +858,8 @@ bool SimplifyCFGOpt::SimplifyEqualityComparisonWithOnlyPredecessor(
     for (unsigned i = 0, e = PredCases.size(); i != e; ++i)
       DeadCases.insert(PredCases[i].Value);
 
-    DEBUG(dbgs() << "Threading pred instr: " << *Pred->getTerminator()
-                 << "Through successor TI: " << *TI);
+    LLVM_DEBUG(dbgs() << "Threading pred instr: " << *Pred->getTerminator()
+                      << "Through successor TI: " << *TI);
 
     // Collect branch weights into a vector.
     SmallVector<uint32_t, 8> Weights;
@@ -886,7 +885,7 @@ bool SimplifyCFGOpt::SimplifyEqualityComparisonWithOnlyPredecessor(
     if (HasWeight && Weights.size() >= 2)
       setBranchWeights(SI, Weights);
 
-    DEBUG(dbgs() << "Leaving: " << *TI << "\n");
+    LLVM_DEBUG(dbgs() << "Leaving: " << *TI << "\n");
     return true;
   }
 
@@ -927,9 +926,9 @@ bool SimplifyCFGOpt::SimplifyEqualityComparisonWithOnlyPredecessor(
   Instruction *NI = Builder.CreateBr(TheRealDest);
   (void)NI;
 
-  DEBUG(dbgs() << "Threading pred instr: " << *Pred->getTerminator()
-               << "Through successor TI: " << *TI << "Leaving: " << *NI
-               << "\n");
+  LLVM_DEBUG(dbgs() << "Threading pred instr: " << *Pred->getTerminator()
+                    << "Through successor TI: " << *TI << "Leaving: " << *NI
+                    << "\n");
 
   EraseTerminatorInstAndDCECond(TI);
   return true;
@@ -1739,7 +1738,8 @@ static bool SinkCommonCodeFromPredecessors(BasicBlock *BB) {
   LockstepReverseIterator LRI(UnconditionalPreds);
   while (LRI.isValid() &&
          canSinkInstructions(*LRI, PHIOperands)) {
-    DEBUG(dbgs() << "SINK: instruction can be sunk: " << *(*LRI)[0] << "\n");
+    LLVM_DEBUG(dbgs() << "SINK: instruction can be sunk: " << *(*LRI)[0]
+                      << "\n");
     InstructionsToSink.insert((*LRI).begin(), (*LRI).end());
     ++ScanIdx;
     --LRI;
@@ -1751,7 +1751,7 @@ static bool SinkCommonCodeFromPredecessors(BasicBlock *BB) {
       for (auto *V : PHIOperands[I])
         if (InstructionsToSink.count(V) == 0)
           ++NumPHIdValues;
-    DEBUG(dbgs() << "SINK: #phid values: " << NumPHIdValues << "\n");
+    LLVM_DEBUG(dbgs() << "SINK: #phid values: " << NumPHIdValues << "\n");
     unsigned NumPHIInsts = NumPHIdValues / UnconditionalPreds.size();
     if ((NumPHIdValues % UnconditionalPreds.size()) != 0)
         NumPHIInsts++;
@@ -1779,7 +1779,7 @@ static bool SinkCommonCodeFromPredecessors(BasicBlock *BB) {
     if (!Profitable)
       return false;
 
-    DEBUG(dbgs() << "SINK: Splitting edge\n");
+    LLVM_DEBUG(dbgs() << "SINK: Splitting edge\n");
     // We have a conditional edge and we're going to sink some instructions.
     // Insert a new block postdominating all blocks we're going to sink from.
     if (!SplitBlockPredecessors(BB, UnconditionalPreds, ".sink.split"))
@@ -1801,16 +1801,17 @@ static bool SinkCommonCodeFromPredecessors(BasicBlock *BB) {
   // and never actually sink it which means we produce more PHIs than intended.
   // This is unlikely in practice though.
   for (unsigned SinkIdx = 0; SinkIdx != ScanIdx; ++SinkIdx) {
-    DEBUG(dbgs() << "SINK: Sink: "
-                 << *UnconditionalPreds[0]->getTerminator()->getPrevNode()
-                 << "\n");
+    LLVM_DEBUG(dbgs() << "SINK: Sink: "
+                      << *UnconditionalPreds[0]->getTerminator()->getPrevNode()
+                      << "\n");
 
     // Because we've sunk every instruction in turn, the current instruction to
     // sink is always at index 0.
     LRI.reset();
     if (!ProfitableToSinkInstruction(LRI)) {
       // Too many PHIs would be created.
-      DEBUG(dbgs() << "SINK: stopping here, too many PHIs would be created!\n");
+      LLVM_DEBUG(
+          dbgs() << "SINK: stopping here, too many PHIs would be created!\n");
       break;
     }
 
@@ -2053,7 +2054,7 @@ static bool SpeculativelyExecuteBB(BranchInst *BI, BasicBlock *ThenBB,
     return false;
 
   // If we get here, we can hoist the instruction and if-convert.
-  DEBUG(dbgs() << "SPECULATIVELY EXECUTING BB" << *ThenBB << "\n";);
+  LLVM_DEBUG(dbgs() << "SPECULATIVELY EXECUTING BB" << *ThenBB << "\n";);
 
   // Insert a select of the value of the speculated store.
   if (SpeculatedStoreValue) {
@@ -2359,8 +2360,9 @@ static bool FoldTwoEntryPHINode(PHINode *PN, const TargetTransformInfo &TTI,
       }
   }
 
-  DEBUG(dbgs() << "FOUND IF CONDITION!  " << *IfCond << "  T: "
-               << IfTrue->getName() << "  F: " << IfFalse->getName() << "\n");
+  LLVM_DEBUG(dbgs() << "FOUND IF CONDITION!  " << *IfCond
+                    << "  T: " << IfTrue->getName()
+                    << "  F: " << IfFalse->getName() << "\n");
 
   // If we can still promote the PHI nodes after this gauntlet of tests,
   // do all of the PHI's now.
@@ -2484,9 +2486,9 @@ static bool SimplifyCondBranchToTwoReturns(BranchInst *BI,
 
   (void)RI;
 
-  DEBUG(dbgs() << "\nCHANGING BRANCH TO TWO RETURNS INTO SELECT:"
-               << "\n  " << *BI << "NewRet = " << *RI
-               << "TRUEBLOCK: " << *TrueSucc << "FALSEBLOCK: " << *FalseSucc);
+  LLVM_DEBUG(dbgs() << "\nCHANGING BRANCH TO TWO RETURNS INTO SELECT:"
+                    << "\n  " << *BI << "NewRet = " << *RI << "TRUEBLOCK: "
+                    << *TrueSucc << "FALSEBLOCK: " << *FalseSucc);
 
   EraseTerminatorInstAndDCECond(BI);
 
@@ -2495,7 +2497,7 @@ static bool SimplifyCondBranchToTwoReturns(BranchInst *BI,
 
 /// Return true if the given instruction is available
 /// in its predecessor block. If yes, the instruction will be removed.
-static bool checkCSEInPredecessor(Instruction *Inst, BasicBlock *PB) {
+static bool tryCSEWithPredecessor(Instruction *Inst, BasicBlock *PB) {
   if (!isa<BinaryOperator>(Inst) && !isa<CmpInst>(Inst))
     return false;
   for (Instruction &I : *PB) {
@@ -2552,14 +2554,16 @@ bool llvm::FoldBranchToCommonDest(BranchInst *BI, unsigned BonusInstThreshold) {
         if (PBI->isConditional() &&
             (BI->getSuccessor(0) == PBI->getSuccessor(0) ||
              BI->getSuccessor(0) == PBI->getSuccessor(1))) {
-          for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E;) {
+          for (auto I = BB->instructionsWithoutDebug().begin(),
+                    E = BB->instructionsWithoutDebug().end();
+               I != E;) {
             Instruction *Curr = &*I++;
             if (isa<CmpInst>(Curr)) {
               Cond = Curr;
               break;
             }
             // Quit if we can't remove this instruction.
-            if (!checkCSEInPredecessor(Curr, PB))
+            if (!tryCSEWithPredecessor(Curr, PB))
               return false;
           }
         }
@@ -2659,7 +2663,7 @@ bool llvm::FoldBranchToCommonDest(BranchInst *BI, unsigned BonusInstThreshold) {
         continue;
     }
 
-    DEBUG(dbgs() << "FOLDING BRANCH TO COMMON DEST:\n" << *PBI << *BB);
+    LLVM_DEBUG(dbgs() << "FOLDING BRANCH TO COMMON DEST:\n" << *PBI << *BB);
     IRBuilder<> Builder(PBI);
 
     // If we need to invert the condition in the pred block to match, do so now.
@@ -3282,8 +3286,8 @@ static bool SimplifyCondBranchToCondBranch(BranchInst *PBI, BranchInst *BI,
   // Finally, if everything is ok, fold the branches to logical ops.
   BasicBlock *OtherDest = BI->getSuccessor(BIOp ^ 1);
 
-  DEBUG(dbgs() << "FOLDING BRs:" << *PBI->getParent()
-               << "AND: " << *BI->getParent());
+  LLVM_DEBUG(dbgs() << "FOLDING BRs:" << *PBI->getParent()
+                    << "AND: " << *BI->getParent());
 
   // If OtherDest *is* BB, then BB is a basic block with a single conditional
   // branch in it, where one edge (OtherDest) goes back to itself but the other
@@ -3301,7 +3305,7 @@ static bool SimplifyCondBranchToCondBranch(BranchInst *PBI, BranchInst *BI,
     OtherDest = InfLoopBlock;
   }
 
-  DEBUG(dbgs() << *PBI->getParent()->getParent());
+  LLVM_DEBUG(dbgs() << *PBI->getParent()->getParent());
 
   // BI may have other predecessors.  Because of this, we leave
   // it alone, but modify PBI.
@@ -3385,8 +3389,8 @@ static bool SimplifyCondBranchToCondBranch(BranchInst *PBI, BranchInst *BI,
     }
   }
 
-  DEBUG(dbgs() << "INTO: " << *PBI->getParent());
-  DEBUG(dbgs() << *PBI->getParent()->getParent());
+  LLVM_DEBUG(dbgs() << "INTO: " << *PBI->getParent());
+  LLVM_DEBUG(dbgs() << *PBI->getParent()->getParent());
 
   // This basic block is probably dead.  We know it has at least
   // one fewer predecessor.
@@ -3686,9 +3690,9 @@ static bool SimplifyBranchOnICmpChain(BranchInst *BI, IRBuilder<> &Builder,
 
   BasicBlock *BB = BI->getParent();
 
-  DEBUG(dbgs() << "Converting 'icmp' chain with " << Values.size()
-               << " cases into SWITCH.  BB is:\n"
-               << *BB);
+  LLVM_DEBUG(dbgs() << "Converting 'icmp' chain with " << Values.size()
+                    << " cases into SWITCH.  BB is:\n"
+                    << *BB);
 
   // If there are any extra values that couldn't be folded into the switch
   // then we evaluate them with an explicit branch first.  Split the block
@@ -3711,8 +3715,8 @@ static bool SimplifyBranchOnICmpChain(BranchInst *BI, IRBuilder<> &Builder,
     // for the edge we just added.
     AddPredecessorToBlock(EdgeBB, BB, NewBB);
 
-    DEBUG(dbgs() << "  ** 'icmp' chain unhandled condition: " << *ExtraCase
-                 << "\nEXTRABB = " << *BB);
+    LLVM_DEBUG(dbgs() << "  ** 'icmp' chain unhandled condition: " << *ExtraCase
+                      << "\nEXTRABB = " << *BB);
     BB = NewBB;
   }
 
@@ -3743,7 +3747,7 @@ static bool SimplifyBranchOnICmpChain(BranchInst *BI, IRBuilder<> &Builder,
   // Erase the old branch instruction.
   EraseTerminatorInstAndDCECond(BI);
 
-  DEBUG(dbgs() << "  ** 'icmp' chain result is:\n" << *BB << '\n');
+  LLVM_DEBUG(dbgs() << "  ** 'icmp' chain result is:\n" << *BB << '\n');
   return true;
 }
 
@@ -4071,8 +4075,8 @@ bool SimplifyCFGOpt::SimplifyReturn(ReturnInst *RI, IRBuilder<> &Builder) {
   if (!UncondBranchPreds.empty() && DupRet) {
     while (!UncondBranchPreds.empty()) {
       BasicBlock *Pred = UncondBranchPreds.pop_back_val();
-      DEBUG(dbgs() << "FOLDING: " << *BB
-                   << "INTO UNCOND BRANCH PRED: " << *Pred);
+      LLVM_DEBUG(dbgs() << "FOLDING: " << *BB
+                        << "INTO UNCOND BRANCH PRED: " << *Pred);
       (void)FoldReturnIntoUncondBranch(RI, BB, Pred);
     }
 
@@ -4396,7 +4400,8 @@ static bool eliminateDeadSwitchCases(SwitchInst *SI, AssumptionCache *AC,
     if (Known.Zero.intersects(CaseVal) || !Known.One.isSubsetOf(CaseVal) ||
         (CaseVal.getMinSignedBits() > MaxSignificantBitsInCond)) {
       DeadCases.push_back(Case.getCaseValue());
-      DEBUG(dbgs() << "SimplifyCFG: switch case " << CaseVal << " is dead.\n");
+      LLVM_DEBUG(dbgs() << "SimplifyCFG: switch case " << CaseVal
+                        << " is dead.\n");
     }
   }
 
@@ -4412,7 +4417,7 @@ static bool eliminateDeadSwitchCases(SwitchInst *SI, AssumptionCache *AC,
   if (HasDefault && DeadCases.empty() &&
       NumUnknownBits < 64 /* avoid overflow */ &&
       SI->getNumCases() == (1ULL << NumUnknownBits)) {
-    DEBUG(dbgs() << "SimplifyCFG: switch default is dead.\n");
+    LLVM_DEBUG(dbgs() << "SimplifyCFG: switch default is dead.\n");
     BasicBlock *NewDefault =
         SplitBlockPredecessors(SI->getDefaultDest(), SI->getParent(), "");
     SI->setDefaultDest(&*NewDefault);
@@ -5674,7 +5679,7 @@ bool SimplifyCFGOpt::SimplifyIndirectBr(IndirectBrInst *IBI) {
 /// any transform which might inhibit optimization (such as our ability to
 /// specialize a particular handler via tail commoning).  We do this by not
 /// merging any blocks which require us to introduce a phi.  Since the same
-/// values are flowing through both blocks, we don't loose any ability to
+/// values are flowing through both blocks, we don't lose any ability to
 /// specialize.  If anything, we make such specialization more likely.
 ///
 /// TODO - This transformation could remove entries from a phi in the target
@@ -5704,7 +5709,7 @@ static bool TryToMergeLandingPad(LandingPadInst *LPad, BranchInst *BI,
 
     // We've found an identical block.  Update our predecessors to take that
     // path instead and make ourselves dead.
-    SmallSet<BasicBlock *, 16> Preds;
+    SmallPtrSet<BasicBlock *, 16> Preds;
     Preds.insert(pred_begin(BB), pred_end(BB));
     for (BasicBlock *Pred : Preds) {
       InvokeInst *II = cast<InvokeInst>(Pred->getTerminator());
@@ -5722,7 +5727,7 @@ static bool TryToMergeLandingPad(LandingPadInst *LPad, BranchInst *BI,
         Inst.eraseFromParent();
     }
 
-    SmallSet<BasicBlock *, 16> Succs;
+    SmallPtrSet<BasicBlock *, 16> Succs;
     Succs.insert(succ_begin(BB), succ_end(BB));
     for (BasicBlock *Succ : Succs) {
       Succ->removePredecessor(BB);
@@ -5996,7 +6001,7 @@ bool SimplifyCFGOpt::run(BasicBlock *BB) {
   // or that just have themself as a predecessor.  These are unreachable.
   if ((pred_empty(BB) && BB != &BB->getParent()->getEntryBlock()) ||
       BB->getSinglePredecessor() == BB) {
-    DEBUG(dbgs() << "Removing BB: \n" << *BB);
+    LLVM_DEBUG(dbgs() << "Removing BB: \n" << *BB);
     DeleteDeadBlock(BB);
     return true;
   }

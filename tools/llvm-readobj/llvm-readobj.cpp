@@ -146,6 +146,12 @@ namespace opts {
   cl::alias ProgramHeadersShort("l", cl::desc("Alias for --program-headers"),
                                 cl::aliasopt(ProgramHeaders));
 
+  // -string-dump
+  cl::list<std::string> StringDump("string-dump", cl::desc("<number|name>"),
+                                   cl::ZeroOrMore);
+  cl::alias StringDumpShort("p", cl::desc("Alias for --string-dump"),
+                            cl::aliasopt(StringDump));
+
   // -hash-table
   cl::opt<bool> HashTable("hash-table",
     cl::desc("Display ELF hash table"));
@@ -157,6 +163,10 @@ namespace opts {
   // -expand-relocs
   cl::opt<bool> ExpandRelocs("expand-relocs",
     cl::desc("Expand each shown relocation to multiple lines"));
+
+  // -raw-relr
+  cl::opt<bool> RawRelr("raw-relr",
+    cl::desc("Do not decode relocations in SHT_RELR section, display raw contents"));
 
   // -codeview
   cl::opt<bool> CodeView("codeview",
@@ -283,6 +293,8 @@ namespace opts {
       cl::desc("Display bucket list histogram for hash sections"));
   cl::alias HashHistogramShort("I", cl::desc("Alias for -elf-hash-histogram"),
                                cl::aliasopt(HashHistogram));
+
+  cl::opt<bool> CGProfile("elf-cg-profile", cl::desc("Display callgraph profile section"));
 
   cl::opt<OutputStyleTy>
       Output("elf-output-style", cl::desc("Specify ELF dump style"),
@@ -415,6 +427,10 @@ static void dumpObject(const ObjectFile *Obj, ScopedPrinter &Writer) {
     Dumper->printNeededLibraries();
   if (opts::ProgramHeaders)
     Dumper->printProgramHeaders();
+  if (!opts::StringDump.empty())
+    llvm::for_each(opts::StringDump, [&Dumper](StringRef SectionName) {
+      Dumper->printSectionAsString(SectionName);
+    });
   if (opts::HashTable)
     Dumper->printHashTable();
   if (opts::GnuHashTable)
@@ -441,6 +457,8 @@ static void dumpObject(const ObjectFile *Obj, ScopedPrinter &Writer) {
       Dumper->printGroupSections();
     if (opts::HashHistogram)
       Dumper->printHashHistogram();
+    if (opts::CGProfile)
+      Dumper->printCGProfile();
     if (opts::Notes)
       Dumper->printNotes();
   }

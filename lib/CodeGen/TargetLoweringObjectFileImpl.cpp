@@ -187,7 +187,7 @@ const MCExpr *TargetLoweringObjectFileELF::getTTypeGlobalReference(
 }
 
 static SectionKind getELFKindForNamedSection(StringRef Name, SectionKind K) {
-  // N.B.: The defaults used in here are no the same ones used in MC.
+  // N.B.: The defaults used in here are not the same ones used in MC.
   // We follow gcc, MC follows gas. For example, given ".section .eh_frame",
   // both gas and MC will produce a section with no flags. Given
   // section(".eh_frame") gcc will produce:
@@ -200,7 +200,7 @@ static SectionKind getELFKindForNamedSection(StringRef Name, SectionKind K) {
 
   if (Name.empty() || Name[0] != '.') return K;
 
-  // Some lame default implementation based on some magic section names.
+  // Default implementation based on some magic section names.
   if (Name == ".bss" ||
       Name.startswith(".bss.") ||
       Name.startswith(".gnu.linkonce.b.") ||
@@ -352,7 +352,8 @@ MCSection *TargetLoweringObjectFileELF::getExplicitSectionGlobal(
       /*EntrySize=*/0, Group, UniqueID, AssociatedSymbol);
   // Make sure that we did not get some other section with incompatible sh_link.
   // This should not be possible due to UniqueID code above.
-  assert(Section->getAssociatedSymbol() == AssociatedSymbol);
+  assert(Section->getAssociatedSymbol() == AssociatedSymbol &&
+         "Associated symbol mismatch between sections");
   return Section;
 }
 
@@ -1059,7 +1060,7 @@ MCSection *TargetLoweringObjectFileCOFF::getExplicitSectionGlobal(
                                      Selection);
 }
 
-static const char *getCOFFSectionNameForUniqueGlobal(SectionKind Kind) {
+static StringRef getCOFFSectionNameForUniqueGlobal(SectionKind Kind) {
   if (Kind.isText())
     return ".text";
   if (Kind.isBSS())
@@ -1082,7 +1083,8 @@ MCSection *TargetLoweringObjectFileCOFF::SelectSectionForGlobal(
     EmitUniquedSection = TM.getDataSections();
 
   if ((EmitUniquedSection && !Kind.isCommon()) || GO->hasComdat()) {
-    const char *Name = getCOFFSectionNameForUniqueGlobal(Kind);
+    SmallString<256> Name = getCOFFSectionNameForUniqueGlobal(Kind);
+
     unsigned Characteristics = getCOFFSectionFlags(Kind, TM);
 
     Characteristics |= COFF::IMAGE_SCN_LNK_COMDAT;
@@ -1102,6 +1104,12 @@ MCSection *TargetLoweringObjectFileCOFF::SelectSectionForGlobal(
     if (!ComdatGV->hasPrivateLinkage()) {
       MCSymbol *Sym = TM.getSymbol(ComdatGV);
       StringRef COMDATSymName = Sym->getName();
+
+      // Append "$symbol" to the section name when targetting mingw. The ld.bfd
+      // COFF linker will not properly handle comdats otherwise.
+      if (getTargetTriple().isWindowsGNUEnvironment())
+        raw_svector_ostream(Name) << '$' << COMDATSymName;
+
       return getContext().getCOFFSection(Name, Characteristics, Kind,
                                          COMDATSymName, Selection, UniqueID);
     } else {
@@ -1159,13 +1167,14 @@ MCSection *TargetLoweringObjectFileCOFF::getSectionForJumpTable(
   StringRef COMDATSymName = Sym->getName();
 
   SectionKind Kind = SectionKind::getReadOnly();
-  const char *Name = getCOFFSectionNameForUniqueGlobal(Kind);
+  StringRef SecName = getCOFFSectionNameForUniqueGlobal(Kind);
   unsigned Characteristics = getCOFFSectionFlags(Kind, TM);
   Characteristics |= COFF::IMAGE_SCN_LNK_COMDAT;
   unsigned UniqueID = NextUniqueID++;
 
-  return getContext().getCOFFSection(Name, Characteristics, Kind, COMDATSymName,
-                                     COFF::IMAGE_COMDAT_SELECT_ASSOCIATIVE, UniqueID);
+  return getContext().getCOFFSection(
+      SecName, Characteristics, Kind, COMDATSymName,
+      COFF::IMAGE_COMDAT_SELECT_ASSOCIATIVE, UniqueID);
 }
 
 void TargetLoweringObjectFileCOFF::emitModuleMetadata(MCStreamer &Streamer,
@@ -1274,6 +1283,114 @@ void TargetLoweringObjectFileCOFF::emitLinkerFlagsForUsed(
   emitLinkerFlagsForUsedCOFF(OS, GV, getTargetTriple(), getMangler());
 }
 
+const MCExpr *TargetLoweringObjectFileCOFF::lowerRelativeReference(
+    const GlobalValue *LHS, const GlobalValue *RHS,
+    const TargetMachine &TM) const {
+  const Triple &T = TM.getTargetTriple();
+  if (!T.isKnownWindowsMSVCEnvironment() &&
+      !T.isWindowsItaniumEnvironment() &&
+      !T.isWindowsCoreCLREnvironment())
+    return nullptr;
+
+  // Our symbols should exist in address space zero, cowardly no-op if
+  // otherwise.
+  if (LHS->getType()->getPointerAddressSpace() != 0 ||
+      RHS->getType()->getPointerAddressSpace() != 0)
+    return nullptr;
+
+  // Both ptrtoint instructions must wrap global objects:
+  // - Only global variables are eligible for image relative relocations.
+  // - The subtrahend refers to the special symbol __ImageBase, a GlobalVariable.
+  // We expect __ImageBase to be a global variable without a section, externally
+  // defined.
+  //
+  // It should look something like this: @__ImageBase = external constant i8
+  if (!isa<GlobalObject>(LHS) || !isa<GlobalVariable>(RHS) ||
+      LHS->isThreadLocal() || RHS->isThreadLocal() ||
+      RHS->getName() != "__ImageBase" || !RHS->hasExternalLinkage() ||
+      cast<GlobalVariable>(RHS)->hasInitializer() || RHS->hasSection())
+    return nullptr;
+
+  return MCSymbolRefExpr::create(TM.getSymbol(LHS),
+                                 MCSymbolRefExpr::VK_COFF_IMGREL32,
+                                 getContext());
+}
+
+static std::string APIntToHexString(const APInt &AI) {
+  unsigned Width = (AI.getBitWidth() / 8) * 2;
+  std::string HexString = utohexstr(AI.getLimitedValue(), /*LowerCase=*/true);
+  unsigned Size = HexString.size();
+  assert(Width >= Size && "hex string is too large!");
+  HexString.insert(HexString.begin(), Width - Size, '0');
+
+  return HexString;
+}
+
+static std::string scalarConstantToHexString(const Constant *C) {
+  Type *Ty = C->getType();
+  if (isa<UndefValue>(C)) {
+    return APIntToHexString(APInt::getNullValue(Ty->getPrimitiveSizeInBits()));
+  } else if (const auto *CFP = dyn_cast<ConstantFP>(C)) {
+    return APIntToHexString(CFP->getValueAPF().bitcastToAPInt());
+  } else if (const auto *CI = dyn_cast<ConstantInt>(C)) {
+    return APIntToHexString(CI->getValue());
+  } else {
+    unsigned NumElements;
+    if (isa<VectorType>(Ty))
+      NumElements = Ty->getVectorNumElements();
+    else
+      NumElements = Ty->getArrayNumElements();
+    std::string HexString;
+    for (int I = NumElements - 1, E = -1; I != E; --I)
+      HexString += scalarConstantToHexString(C->getAggregateElement(I));
+    return HexString;
+  }
+}
+
+MCSection *TargetLoweringObjectFileCOFF::getSectionForConstant(
+    const DataLayout &DL, SectionKind Kind, const Constant *C,
+    unsigned &Align) const {
+  if (Kind.isMergeableConst() && C &&
+      getContext().getAsmInfo()->hasCOFFAssociativeComdats()) {
+    // GNU binutils doesn't support the kind of symbol with a null
+    // storage class that this generates.
+    const unsigned Characteristics = COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                                     COFF::IMAGE_SCN_MEM_READ |
+                                     COFF::IMAGE_SCN_LNK_COMDAT;
+    std::string COMDATSymName;
+    if (Kind.isMergeableConst4()) {
+      if (Align <= 4) {
+        COMDATSymName = "__real@" + scalarConstantToHexString(C);
+        Align = 4;
+      }
+    } else if (Kind.isMergeableConst8()) {
+      if (Align <= 8) {
+        COMDATSymName = "__real@" + scalarConstantToHexString(C);
+        Align = 8;
+      }
+    } else if (Kind.isMergeableConst16()) {
+      // FIXME: These may not be appropriate for non-x86 architectures.
+      if (Align <= 16) {
+        COMDATSymName = "__xmm@" + scalarConstantToHexString(C);
+        Align = 16;
+      }
+    } else if (Kind.isMergeableConst32()) {
+      if (Align <= 32) {
+        COMDATSymName = "__ymm@" + scalarConstantToHexString(C);
+        Align = 32;
+      }
+    }
+
+    if (!COMDATSymName.empty())
+      return getContext().getCOFFSection(".rdata", Characteristics, Kind,
+                                         COMDATSymName,
+                                         COFF::IMAGE_COMDAT_SELECT_ANY);
+  }
+
+  return TargetLoweringObjectFile::getSectionForConstant(DL, Kind, C, Align);
+}
+
+
 //===----------------------------------------------------------------------===//
 //                                  Wasm
 //===----------------------------------------------------------------------===//
@@ -1303,6 +1420,12 @@ static SectionKind getWasmKindForNamedSection(StringRef Name, SectionKind K) {
 
 MCSection *TargetLoweringObjectFileWasm::getExplicitSectionGlobal(
     const GlobalObject *GO, SectionKind Kind, const TargetMachine &TM) const {
+  // We don't support explict section names for functions in the wasm object
+  // format.  Each function has to be in its own unique section.
+  if (isa<Function>(GO)) {
+    return SelectSectionForGlobal(GO, Kind, TM);
+  }
+
   StringRef Name = GO->getSection();
 
   Kind = getWasmKindForNamedSection(Name, Kind);

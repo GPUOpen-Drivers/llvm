@@ -17,8 +17,8 @@
 //===----------------------------------------------------------------------===//
 
 let Defs = [ARGUMENTS] in {
-def ATOMIC_LOAD_I32 : WebAssemblyLoad<I32, "i32.atomic.load", 0xfe10>;
-def ATOMIC_LOAD_I64 : WebAssemblyLoad<I64, "i64.atomic.load", 0xfe11>;
+defm ATOMIC_LOAD_I32 : WebAssemblyLoad<I32, "i32.atomic.load", 0xfe10>;
+defm ATOMIC_LOAD_I64 : WebAssemblyLoad<I64, "i64.atomic.load", 0xfe11>;
 } // Defs = [ARGUMENTS]
 
 // Select loads with no constant offset.
@@ -56,11 +56,11 @@ def : LoadPatExternSymOffOnly<i64, atomic_load_64, ATOMIC_LOAD_I64>;
 // Extending loads. Note that there are only zero-extending atomic loads, no
 // sign-extending loads.
 let Defs = [ARGUMENTS] in {
-def ATOMIC_LOAD8_U_I32 : WebAssemblyLoad<I32, "i32.atomic.load8_u", 0xfe12>;
-def ATOMIC_LOAD16_U_I32 : WebAssemblyLoad<I32, "i32.atomic.load16_u", 0xfe13>;
-def ATOMIC_LOAD8_U_I64 : WebAssemblyLoad<I64, "i64.atomic.load8_u", 0xfe14>;
-def ATOMIC_LOAD16_U_I64 : WebAssemblyLoad<I64, "i64.atomic.load16_u", 0xfe15>;
-def ATOMIC_LOAD32_U_I64 : WebAssemblyLoad<I64, "i64.atomic.load32_u", 0xfe16>;
+defm ATOMIC_LOAD8_U_I32 : WebAssemblyLoad<I32, "i32.atomic.load8_u", 0xfe12>;
+defm ATOMIC_LOAD16_U_I32 : WebAssemblyLoad<I32, "i32.atomic.load16_u", 0xfe13>;
+defm ATOMIC_LOAD8_U_I64 : WebAssemblyLoad<I64, "i64.atomic.load8_u", 0xfe14>;
+defm ATOMIC_LOAD16_U_I64 : WebAssemblyLoad<I64, "i64.atomic.load16_u", 0xfe15>;
+defm ATOMIC_LOAD32_U_I64 : WebAssemblyLoad<I64, "i64.atomic.load32_u", 0xfe16>;
 } // Defs = [ARGUMENTS]
 
 // Fragments for exending loads. These are different from regular loads because
@@ -196,7 +196,145 @@ def : LoadPatExternSymOffOnly<i64, anyext_aload_16_64, ATOMIC_LOAD16_U_I64>;
 // Atomic stores
 //===----------------------------------------------------------------------===//
 
-// TODO: add atomic stores here...
+let Defs = [ARGUMENTS] in {
+defm ATOMIC_STORE_I32 : WebAssemblyStore<I32, "i32.atomic.store", 0xfe17>;
+defm ATOMIC_STORE_I64 : WebAssemblyStore<I64, "i64.atomic.store", 0xfe18>;
+} // Defs = [ARGUMENTS]
+
+// We need an 'atomic' version of store patterns because store and atomic_store
+// nodes have different operand orders:
+// store: (store $val, $ptr)
+// atomic_store: (store $ptr, $val)
+
+let Predicates = [HasAtomics] in {
+
+// Select stores with no constant offset.
+class AStorePatNoOffset<ValueType ty, PatFrag node, NI inst> :
+  Pat<(node I32:$addr, ty:$val), (inst 0, 0, $addr, $val)>;
+def : AStorePatNoOffset<i32, atomic_store_32, ATOMIC_STORE_I32>;
+def : AStorePatNoOffset<i64, atomic_store_64, ATOMIC_STORE_I64>;
+
+// Select stores with a constant offset.
+
+// Pattern with address + immediate offset
+class AStorePatImmOff<ValueType ty, PatFrag storekind, PatFrag operand,
+                      NI inst> :
+  Pat<(storekind (operand I32:$addr, imm:$off), ty:$val),
+      (inst 0, imm:$off, $addr, ty:$val)>;
+def : AStorePatImmOff<i32, atomic_store_32, regPlusImm, ATOMIC_STORE_I32>;
+def : AStorePatImmOff<i64, atomic_store_64, regPlusImm, ATOMIC_STORE_I64>;
+def : AStorePatImmOff<i32, atomic_store_32, or_is_add, ATOMIC_STORE_I32>;
+def : AStorePatImmOff<i64, atomic_store_64, or_is_add, ATOMIC_STORE_I64>;
+
+class AStorePatGlobalAddr<ValueType ty, PatFrag storekind, NI inst> :
+  Pat<(storekind (regPlusGA I32:$addr, (WebAssemblywrapper tglobaladdr:$off)),
+                 ty:$val),
+      (inst 0, tglobaladdr:$off, I32:$addr, ty:$val)>;
+def : AStorePatGlobalAddr<i32, atomic_store_32, ATOMIC_STORE_I32>;
+def : AStorePatGlobalAddr<i64, atomic_store_64, ATOMIC_STORE_I64>;
+
+class AStorePatExternalSym<ValueType ty, PatFrag storekind, NI inst> :
+  Pat<(storekind (add I32:$addr, (WebAssemblywrapper texternalsym:$off)),
+                 ty:$val),
+      (inst 0, texternalsym:$off, I32:$addr, ty:$val)>;
+def : AStorePatExternalSym<i32, atomic_store_32, ATOMIC_STORE_I32>;
+def : AStorePatExternalSym<i64, atomic_store_64, ATOMIC_STORE_I64>;
+
+// Select stores with just a constant offset.
+class AStorePatOffsetOnly<ValueType ty, PatFrag storekind, NI inst> :
+  Pat<(storekind imm:$off, ty:$val),
+      (inst 0, imm:$off, (CONST_I32 0), ty:$val)>;
+def : AStorePatOffsetOnly<i32, atomic_store_32, ATOMIC_STORE_I32>;
+def : AStorePatOffsetOnly<i64, atomic_store_64, ATOMIC_STORE_I64>;
+
+class AStorePatGlobalAddrOffOnly<ValueType ty, PatFrag storekind, NI inst> :
+  Pat<(storekind (WebAssemblywrapper tglobaladdr:$off), ty:$val),
+      (inst 0, tglobaladdr:$off, (CONST_I32 0), ty:$val)>;
+def : AStorePatGlobalAddrOffOnly<i32, atomic_store_32, ATOMIC_STORE_I32>;
+def : AStorePatGlobalAddrOffOnly<i64, atomic_store_64, ATOMIC_STORE_I64>;
+
+class AStorePatExternSymOffOnly<ValueType ty, PatFrag storekind, NI inst> :
+  Pat<(storekind (WebAssemblywrapper texternalsym:$off), ty:$val),
+      (inst 0, texternalsym:$off, (CONST_I32 0), ty:$val)>;
+def : AStorePatExternSymOffOnly<i32, atomic_store_32, ATOMIC_STORE_I32>;
+def : AStorePatExternSymOffOnly<i64, atomic_store_64, ATOMIC_STORE_I64>;
+
+} // Predicates = [HasAtomics]
+
+// Truncating stores.
+let Defs = [ARGUMENTS] in {
+defm ATOMIC_STORE8_I32 : WebAssemblyStore<I32, "i32.atomic.store8", 0xfe19>;
+defm ATOMIC_STORE16_I32 : WebAssemblyStore<I32, "i32.atomic.store16", 0xfe1a>;
+defm ATOMIC_STORE8_I64 : WebAssemblyStore<I64, "i64.atomic.store8", 0xfe1b>;
+defm ATOMIC_STORE16_I64 : WebAssemblyStore<I64, "i64.atomic.store16", 0xfe1c>;
+defm ATOMIC_STORE32_I64 : WebAssemblyStore<I64, "i64.atomic.store32", 0xfe1d>;
+} // Defs = [ARGUMENTS]
+
+// Fragments for truncating stores.
+
+// We don't have single truncating atomic store instructions. For 32-bit
+// instructions, we just need to match bare atomic stores. On the other hand,
+// truncating stores from i64 values are once truncated to i32 first.
+class trunc_astore_64<PatFrag storekind> :
+  PatFrag<(ops node:$addr, node:$val),
+          (storekind node:$addr, (i32 (trunc (i64 node:$val))))>;
+def trunc_astore_8_64 : trunc_astore_64<atomic_store_8>;
+def trunc_astore_16_64 : trunc_astore_64<atomic_store_16>;
+def trunc_astore_32_64 : trunc_astore_64<atomic_store_32>;
+
+let Predicates = [HasAtomics] in {
+
+// Truncating stores with no constant offset
+def : AStorePatNoOffset<i32, atomic_store_8, ATOMIC_STORE8_I32>;
+def : AStorePatNoOffset<i32, atomic_store_16, ATOMIC_STORE16_I32>;
+def : AStorePatNoOffset<i64, trunc_astore_8_64, ATOMIC_STORE8_I64>;
+def : AStorePatNoOffset<i64, trunc_astore_16_64, ATOMIC_STORE16_I64>;
+def : AStorePatNoOffset<i64, trunc_astore_32_64, ATOMIC_STORE32_I64>;
+
+// Truncating stores with a constant offset
+def : AStorePatImmOff<i32, atomic_store_8, regPlusImm, ATOMIC_STORE8_I32>;
+def : AStorePatImmOff<i32, atomic_store_16, regPlusImm, ATOMIC_STORE16_I32>;
+def : AStorePatImmOff<i64, trunc_astore_8_64, regPlusImm, ATOMIC_STORE8_I64>;
+def : AStorePatImmOff<i64, trunc_astore_16_64, regPlusImm, ATOMIC_STORE16_I64>;
+def : AStorePatImmOff<i64, trunc_astore_32_64, regPlusImm, ATOMIC_STORE32_I64>;
+def : AStorePatImmOff<i32, atomic_store_8, or_is_add, ATOMIC_STORE8_I32>;
+def : AStorePatImmOff<i32, atomic_store_16, or_is_add, ATOMIC_STORE16_I32>;
+def : AStorePatImmOff<i64, trunc_astore_8_64, or_is_add, ATOMIC_STORE8_I64>;
+def : AStorePatImmOff<i64, trunc_astore_16_64, or_is_add, ATOMIC_STORE16_I64>;
+def : AStorePatImmOff<i64, trunc_astore_32_64, or_is_add, ATOMIC_STORE32_I64>;
+
+def : AStorePatGlobalAddr<i32, atomic_store_8, ATOMIC_STORE8_I32>;
+def : AStorePatGlobalAddr<i32, atomic_store_16, ATOMIC_STORE16_I32>;
+def : AStorePatGlobalAddr<i64, trunc_astore_8_64, ATOMIC_STORE8_I64>;
+def : AStorePatGlobalAddr<i64, trunc_astore_16_64, ATOMIC_STORE16_I64>;
+def : AStorePatGlobalAddr<i64, trunc_astore_32_64, ATOMIC_STORE32_I64>;
+
+def : AStorePatExternalSym<i32, atomic_store_8, ATOMIC_STORE8_I32>;
+def : AStorePatExternalSym<i32, atomic_store_16, ATOMIC_STORE16_I32>;
+def : AStorePatExternalSym<i64, trunc_astore_8_64, ATOMIC_STORE8_I64>;
+def : AStorePatExternalSym<i64, trunc_astore_16_64, ATOMIC_STORE16_I64>;
+def : AStorePatExternalSym<i64, trunc_astore_32_64, ATOMIC_STORE32_I64>;
+
+// Truncating stores with just a constant offset
+def : AStorePatOffsetOnly<i32, atomic_store_8, ATOMIC_STORE8_I32>;
+def : AStorePatOffsetOnly<i32, atomic_store_16, ATOMIC_STORE16_I32>;
+def : AStorePatOffsetOnly<i64, trunc_astore_8_64, ATOMIC_STORE8_I64>;
+def : AStorePatOffsetOnly<i64, trunc_astore_16_64, ATOMIC_STORE16_I64>;
+def : AStorePatOffsetOnly<i64, trunc_astore_32_64, ATOMIC_STORE32_I64>;
+
+def : AStorePatGlobalAddrOffOnly<i32, atomic_store_8, ATOMIC_STORE8_I32>;
+def : AStorePatGlobalAddrOffOnly<i32, atomic_store_16, ATOMIC_STORE16_I32>;
+def : AStorePatGlobalAddrOffOnly<i64, trunc_astore_8_64, ATOMIC_STORE8_I64>;
+def : AStorePatGlobalAddrOffOnly<i64, trunc_astore_16_64, ATOMIC_STORE16_I64>;
+def : AStorePatGlobalAddrOffOnly<i64, trunc_astore_32_64, ATOMIC_STORE32_I64>;
+
+def : AStorePatExternSymOffOnly<i32, atomic_store_8, ATOMIC_STORE8_I32>;
+def : AStorePatExternSymOffOnly<i32, atomic_store_16, ATOMIC_STORE16_I32>;
+def : AStorePatExternSymOffOnly<i64, trunc_astore_8_64, ATOMIC_STORE8_I64>;
+def : AStorePatExternSymOffOnly<i64, trunc_astore_16_64, ATOMIC_STORE16_I64>;
+def : AStorePatExternSymOffOnly<i64, trunc_astore_32_64, ATOMIC_STORE32_I64>;
+
+} // Predicates = [HasAtomics]
 
 //===----------------------------------------------------------------------===//
 // Low-level exclusive operations

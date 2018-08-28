@@ -20,6 +20,7 @@
 #include "AMDGPUSubtarget.h"
 #include "SIInstrInfo.h"
 #include "SIRegisterInfo.h"
+#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
 #include "Utils/AMDGPUBaseInfo.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -249,7 +250,7 @@ void SIBufMemMerge::processSubSection(const SmallVector<SimpleMI, 8> &Candidates
   // Loop through the indices creating the largest size we can from the
   // remaining elements
   while(Size) {
-    DEBUG(
+    LLVM_DEBUG(
       dbgs() << "Processing : \n";
       for( auto I = StartIdx; I <= EndIdx ; ++I)
         dbgs() << "\t" << *Candidates[I].Inst << "\n";);
@@ -262,13 +263,13 @@ void SIBufMemMerge::processSubSection(const SmallVector<SimpleMI, 8> &Candidates
       if (nextSize == eltSize) {
         // Don't need a replacement here as the replacement size and the
         // original size are the same
-        DEBUG(dbgs() << "Skipping coalesced replacement as same size: "
+        LLVM_DEBUG(dbgs() << "Skipping coalesced replacement as same size: "
                      << *Candidates[StartIdx].Inst);
         ++StartIdx;
         Size -= nextSize;
         continue;
       }
-      DEBUG(dbgs() << "Creating new coalesced instruction of X" << nextSize
+      LLVM_DEBUG(dbgs() << "Creating new coalesced instruction of X" << nextSize
                    << "\n");
       const TargetRegisterClass *SuperRC = nullptr;
       switch(nextSize) {
@@ -340,7 +341,7 @@ void SIBufMemMerge::processSubSection(const SmallVector<SimpleMI, 8> &Candidates
       for (auto J = StartIdx; J < I; J++) {
         Candidates[J].Inst->eraseFromParent();
       }
-      DEBUG(dbgs() << "Inserted coalesced instruction for DwordX"
+      LLVM_DEBUG(dbgs() << "Inserted coalesced instruction for DwordX"
                    << nextSize << " " << *NewMergeInst << "\n");
       Size -= nextSize;
       StartIdx = I;
@@ -359,8 +360,8 @@ bool SIBufMemMerge::processList(
     for (auto &Elt : EachList)
       Elt.OriginalOrder = Order++;
 
-    DEBUG(dbgs() << "Processing the following list\n");
-    DEBUG(for (auto Elt : EachList) dbgs() << Elt.OriginalOrder << " : "
+    LLVM_DEBUG(dbgs() << "Processing the following list\n");
+    LLVM_DEBUG(for (auto Elt : EachList) dbgs() << Elt.OriginalOrder << " : "
                                            << *(Elt.Inst) << "\n";);
     
     std::sort(EachList.begin(), EachList.end(), [this](SimpleMI a, SimpleMI b) {
@@ -443,7 +444,7 @@ bool SIBufMemMerge::optimizeBlock(MachineBasicBlock &MBB) {
 
     // Any instruction that stores prevents any futher coalescing
     if (MI.mayStore()) {
-      DEBUG(dbgs() << "Found an intermediate store instruction " << MI << "\n");
+      LLVM_DEBUG(dbgs() << "Found an intermediate store instruction " << MI << "\n");
       Phase += 1; // Stop adding any instructions to existing lists - new ones
                   // required after blocking instruction
       continue;
@@ -486,7 +487,7 @@ bool SIBufMemMerge::runOnMachineFunction(MachineFunction &MF) {
   TII = ST->getInstrInfo();
   TRI = &TII->getRegisterInfo();
 
-  DEBUG(dbgs() << "Running SIBufMemMerge\n");
+  LLVM_DEBUG(dbgs() << "Running SIBufMemMerge\n");
 
   bool Modified = false;
 

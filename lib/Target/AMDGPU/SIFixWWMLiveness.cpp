@@ -74,6 +74,7 @@
 #include "AMDGPUSubtarget.h"
 #include "SIInstrInfo.h"
 #include "SIRegisterInfo.h"
+#include "MCTargetDesc/AMDGPUMCTargetDesc.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/SparseBitVector.h"
 #include "llvm/CodeGen/LiveIntervals.h"
@@ -152,7 +153,7 @@ FunctionPass *llvm::createSIFixWWMLivenessPass() {
 }
 
 bool SIFixWWMLiveness::runOnMachineFunction(MachineFunction &MF) {
-  DEBUG(dbgs() << "SIFixWWMLiveness: function " << MF.getName() << "\n");
+  LLVM_DEBUG(dbgs() << "SIFixWWMLiveness: function " << MF.getName() << "\n");
   bool Modified = false;
 
   // This doesn't actually need LiveIntervals, but we can preserve them.
@@ -239,7 +240,7 @@ void SIFixWWMLiveness::processDef(MachineOperand &DefOpnd) {
       auto UseBlock = MRI->use_begin(Reg)->getParent()->getParent();
       for (auto Succ : DomDefBlock->successors()) {
         if (Succ == UseBlock) {
-          DEBUG(dbgs() << printReg(Reg, TRI) << " is a then phi reg\n");
+          LLVM_DEBUG(dbgs() << printReg(Reg, TRI) << " is a then phi reg\n");
           ThenDefs.push_back(&DefOpnd);
           return;
         }
@@ -270,7 +271,7 @@ void SIFixWWMLiveness::processDef(MachineOperand &DefOpnd) {
     }
     if (!IsLoopExit)
       return;
-    DEBUG(dbgs() << printReg(Reg, TRI)
+    LLVM_DEBUG(dbgs() << printReg(Reg, TRI)
         << " is a loop exit reg with loop header at "
         << "bb." << Loop->getHeader()->getNumber() << "\n");
     LoopExitDefs.push_back(std::pair<MachineOperand *, MachineLoop *>(
@@ -291,7 +292,7 @@ void SIFixWWMLiveness::processDef(MachineOperand &DefOpnd) {
   auto Loop = LoopInfo->getLoopFor(UseBlock);
   if (!Loop || Loop->getHeader() != UseBlock
       || Loop->contains(Defs[0]->getParent())) {
-    DEBUG(dbgs() << printReg(Reg, TRI)
+    LLVM_DEBUG(dbgs() << printReg(Reg, TRI)
         << " is multi-def but single use not in loop header\n");
     return;
   }
@@ -299,7 +300,7 @@ void SIFixWWMLiveness::processDef(MachineOperand &DefOpnd) {
     if (!Loop->contains(Defs[I]->getParent()))
       return;
   }
-  DEBUG(dbgs() << printReg(Reg, TRI)
+  LLVM_DEBUG(dbgs() << printReg(Reg, TRI)
       << " is a loop phi reg with loop header at "
       << "bb." << Loop->getHeader()->getNumber() << "\n");
   LoopPhiDefs.push_back(
@@ -311,10 +312,10 @@ void SIFixWWMLiveness::processDef(MachineOperand &DefOpnd) {
 // code inside the "then" clause and turn the second def into a partial def so
 // its liveness goes through the WWM code in the "then" clause.
 bool SIFixWWMLiveness::processThenDef(MachineOperand *DefOpnd) {
-  DEBUG(dbgs() << "Processing then def: " << *DefOpnd->getParent());
+  LLVM_DEBUG(dbgs() << "Processing then def: " << *DefOpnd->getParent());
   if (DefOpnd->getParent()->getOpcode() == TargetOpcode::IMPLICIT_DEF) {
     // Ignore if dominating def is undef.
-    DEBUG(dbgs() << "  ignoring as dominating def is undef\n");
+    LLVM_DEBUG(dbgs() << "  ignoring as dominating def is undef\n");
     return false;
   }
   unsigned Reg = DefOpnd->getReg();
@@ -326,7 +327,7 @@ bool SIFixWWMLiveness::processThenDef(MachineOperand *DefOpnd) {
   for (auto WWM : WWMs) {
     if (DomTree->dominates(DefOpnd->getParent()->getParent(), WWM->getParent())
         && !DomTree->dominates(UseBlock, WWM->getParent())) {
-      DEBUG(dbgs() << "  contains WWM: " << *WWM);
+      LLVM_DEBUG(dbgs() << "  contains WWM: " << *WWM);
       ContainsWWM = true;
       break;
     }
@@ -341,7 +342,7 @@ bool SIFixWWMLiveness::processThenDef(MachineOperand *DefOpnd) {
   }
   // Make it a partial def.
   OtherDef->addOperand(MachineOperand::CreateReg(Reg, false, /*isImp=*/true));
-  DEBUG(dbgs() << *OtherDef);
+  LLVM_DEBUG(dbgs() << *OtherDef);
   return true;
 }
 
@@ -351,12 +352,12 @@ bool SIFixWWMLiveness::processThenDef(MachineOperand *DefOpnd) {
 // through the WWM code.
 bool SIFixWWMLiveness::processLoopExitDef(MachineOperand *DefOpnd,
       MachineLoop *Loop) {
-  DEBUG(dbgs() << "Processing loop exit def: " << *DefOpnd->getParent());
+  LLVM_DEBUG(dbgs() << "Processing loop exit def: " << *DefOpnd->getParent());
   // Check whether there is WWM code inside the loop.
   bool ContainsWWM = false;
   for (auto WWM : WWMs) {
     if (Loop->contains(WWM->getParent())) {
-      DEBUG(dbgs() << "  contains WWM: " << *WWM);
+      LLVM_DEBUG(dbgs() << "  contains WWM: " << *WWM);
       ContainsWWM = true;
       break;
     }
@@ -369,14 +370,14 @@ bool SIFixWWMLiveness::processLoopExitDef(MachineOperand *DefOpnd,
     if (!Loop->contains(Pred)) {
       auto ImplicitDef = BuildMI(*Pred, Pred->getFirstTerminator(), DebugLoc(),
           TII->get(TargetOpcode::IMPLICIT_DEF), Reg);
-      DEBUG(dbgs() << *ImplicitDef);
+      LLVM_DEBUG(dbgs() << *ImplicitDef);
       (void)ImplicitDef;
     }
   }
   // Make the original def partial.
   DefOpnd->getParent()->addOperand(MachineOperand::CreateReg(
           Reg, false, /*isImp=*/true));
-  DEBUG(dbgs() << *DefOpnd->getParent());
+  LLVM_DEBUG(dbgs() << *DefOpnd->getParent());
   return true;
 }
 
@@ -386,12 +387,12 @@ bool SIFixWWMLiveness::processLoopExitDef(MachineOperand *DefOpnd,
 // defs so the liveness goes through the WWM code.
 bool SIFixWWMLiveness::processLoopPhiDef(MachineOperand *DefOpnd,
       MachineLoop *Loop) {
-  DEBUG(dbgs() << "Processing loop phi def: " << *DefOpnd->getParent());
+  LLVM_DEBUG(dbgs() << "Processing loop phi def: " << *DefOpnd->getParent());
   // Check whether there is WWM code inside the loop.
   bool ContainsWWM = false;
   for (auto WWM : WWMs) {
     if (Loop->contains(WWM->getParent())) {
-      DEBUG(dbgs() << "  contains WWM: " << *WWM);
+      LLVM_DEBUG(dbgs() << "  contains WWM: " << *WWM);
       ContainsWWM = true;
       break;
     }
@@ -410,7 +411,7 @@ bool SIFixWWMLiveness::processLoopPhiDef(MachineOperand *DefOpnd,
     if (DefOpnd->getParent() == Def)
       continue;
     Def->addOperand(MachineOperand::CreateReg(Reg, false, /*isImp=*/true));
-    DEBUG(dbgs() << *Def);
+    LLVM_DEBUG(dbgs() << *Def);
   }
   return true;
 }
