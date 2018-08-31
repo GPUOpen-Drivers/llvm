@@ -75,6 +75,7 @@ protected:
   bool HasInv2PiInlineImm;
   bool HasFminFmaxLegacy;
   bool EnablePromoteAlloca;
+  bool HasTrigReducedRange;
   int LocalMemorySize;
   unsigned WavefrontSize;
 
@@ -177,6 +178,10 @@ public:
 
   bool hasFminFmaxLegacy() const {
     return HasFminFmaxLegacy;
+  }
+
+  bool hasTrigReducedRange() const {
+    return HasTrigReducedRange;
   }
 
   bool isPromoteAllocaEnabled() const {
