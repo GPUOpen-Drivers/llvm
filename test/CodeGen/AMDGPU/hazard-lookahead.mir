@@ -1,0 +1,46 @@
+# RUN: llc -march=amdgcn -mcpu=gfx900 -verify-machineinstrs -run-pass  post-RA-hazard-rec %s -o - | FileCheck --check-prefixes=GCN,GFX89 %s
+# RUN: llc -march=amdgcn -mcpu=gfx803 -verify-machineinstrs -run-pass  post-RA-hazard-rec %s -o - | FileCheck --check-prefixes=GCN,GFX89 %s
+
+# IMPLICIT_DEF/DBG_VALUE instructions should not prevent the hazard recognizer
+# from adding s_nop instructions between m0 update and s_sendmsg.
+
+---
+name: hazard-lookahead-implicit-def
+body: |
+  ; GCN-LABEL: name: hazard-lookahead-implicit-def
+  ; GCN: $vgpr6 = IMPLICIT_DEF
+  ; GFX89: S_NOP 0
+  ; GCN: S_SENDMSG 3, implicit $exec, implicit $m0
+
+  bb.0:
+    $m0 = S_MOV_B32 killed $sgpr12
+    $vgpr0 = IMPLICIT_DEF 
+    $vgpr1 = IMPLICIT_DEF 
+    $vgpr2 = IMPLICIT_DEF 
+    $vgpr3 = IMPLICIT_DEF 
+    $vgpr4 = IMPLICIT_DEF 
+    $vgpr5 = IMPLICIT_DEF 
+    $vgpr6 = IMPLICIT_DEF 
+    S_SENDMSG 3, implicit $exec, implicit $m0
+    S_ENDPGM
+...
+---
+name: hazard-lookahead-dbg-value
+body: |
+  ; GCN-LABEL: name: hazard-lookahead-dbg-value
+  ; GCN: DBG_VALUE 6
+  ; GFX89: S_NOP 0
+  ; GCN: S_SENDMSG 3, implicit $exec, implicit $m0
+
+  bb.0:
+    $m0 = S_MOV_B32 killed $sgpr12
+    DBG_VALUE 0
+    DBG_VALUE 1
+    DBG_VALUE 2
+    DBG_VALUE 3
+    DBG_VALUE 4
+    DBG_VALUE 5
+    DBG_VALUE 6
+    S_SENDMSG 3, implicit $exec, implicit $m0
+    S_ENDPGM
+...
