@@ -215,6 +215,13 @@ void GCNHazardRecognizer::AdvanceCycle() {
   if (!CurrCycleInstr)
     return;
 
+  // Do not track non-instructions which do not affect the wait states.
+  // If included, these instructions can lead to buffer overflow such that
+  // detectable hazards are missed.
+  unsigned Opcode = CurrCycleInstr->getOpcode();
+  if (Opcode == AMDGPU::DBG_VALUE || Opcode == AMDGPU::IMPLICIT_DEF)
+    return;
+
   unsigned NumWaitStates = TII.getNumWaitStates(*CurrCycleInstr);
 
   // Keep track of emitted instructions
@@ -253,8 +260,7 @@ int GCNHazardRecognizer::getWaitStatesSince(
         return WaitStates;
 
       unsigned Opcode = MI->getOpcode();
-      if (Opcode == AMDGPU::DBG_VALUE || Opcode == AMDGPU::IMPLICIT_DEF ||
-          Opcode == AMDGPU::INLINEASM)
+      if (Opcode == AMDGPU::INLINEASM)
         continue;
     }
     ++WaitStates;
