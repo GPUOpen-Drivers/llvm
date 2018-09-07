@@ -1426,6 +1426,11 @@ def : GCNPat <
 >;
 
 def : GCNPat <
+  (f16 (uint_to_fp i1:$src)),
+  (V_CVT_F16_F32_e32 (V_CNDMASK_B32_e64 (i32 0), (i32 CONST.FP32_ONE), $src))
+>;
+
+def : GCNPat <
   (f32 (uint_to_fp i1:$src)),
   (V_CNDMASK_B32_e64 (i32 0), (i32 CONST.FP32_ONE), $src)
 >;
