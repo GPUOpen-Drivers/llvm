@@ -1173,7 +1173,9 @@ bool RegisterCoalescer::removePartialRedundancy(const CoalescerPair &CP,
       }
       ++I;
     }
-    LIS->extendToIndices(SR, EndPoints);
+    SmallVector<SlotIndex, 8> Undefs;
+    IntB.computeSubRangeUndefs(Undefs, SR.LaneMask, *MRI, *LIS->getSlotIndexes());
+    LIS->extendToIndices(SR, EndPoints, Undefs);
   }
   // If any dead defs were extended, truncate them.
   shrinkToUses(&IntB);
