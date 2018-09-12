@@ -2430,7 +2430,7 @@ std::pair<const VNInfo*, unsigned> JoinVals::followCopyChain(
           ValueIn = LRQ.valueIn();
           continue;
         }
-        if (LRQ.valueIn() && ValueIn->def != LRQ.valueIn()->def)
+        if (LRQ.valueIn() && ValueIn != LRQ.valueIn())
           return std::make_pair(VNI, TrackReg);
       }
     }
