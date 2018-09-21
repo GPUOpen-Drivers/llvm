@@ -1072,6 +1072,16 @@ bool RegisterCoalescer::removePartialRedundancy(const CoalescerPair &CP,
     assert(BValNo && "All sublanes should be live");
     LIS->pruneValue(SR, CopyIdx.getRegSlot(), &EndPoints);
     BValNo->markUnused();
+    // If any endpoint is the copy itself, meaning it was dead in this lane,
+    // then remove it.
+    for (unsigned I = 0; I != EndPoints.size(); ) {
+      if (!EndPoints[I].getInstrDistance(CopyIdx)) {
+        EndPoints[I] = EndPoints.back();
+        EndPoints.pop_back();
+        continue;
+      }
+      ++I;
+    }
     LIS->extendToIndices(SR, EndPoints);
   }
   // If any dead defs were extended, truncate them.
