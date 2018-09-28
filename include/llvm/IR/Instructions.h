@@ -2464,6 +2464,15 @@ public:
     return NumSourceElts != NumMaskElts;
   }
 
+  /// Return true if this shuffle returns a vector with a greater number of
+  /// elements than its source vectors.
+  /// Example: shufflevector <2 x n> A, <2 x n> B, <1,2,3>
+  bool increasesLength() const {
+    unsigned NumSourceElts = Op<0>()->getType()->getVectorNumElements();
+    unsigned NumMaskElts = getMask()->getType()->getVectorNumElements();
+    return NumSourceElts < NumMaskElts;
+  }
+
   /// Return true if this shuffle mask chooses elements from exactly one source
   /// vector.
   /// Example: <7,5,undef,7>
