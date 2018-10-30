@@ -44,6 +44,7 @@ struct Status {
   unsigned Mode;
 
   Status() : Mask(0), Mode(0){};
+
   Status(unsigned Mask, unsigned Mode) : Mask(Mask), Mode(Mode) {
     Mode &= Mask;
   };
@@ -101,6 +102,12 @@ public:
   // The Status that represents the intersection of exit Mode register settings
   // from all predecessor blocks. Calculated in Phase 2, and used by Phase 3.
   Status Pred;
+
+  // In Phase 1 we record the first instruction that has a mode requirement,
+  // which is used in Phase 3 if we need to insert a mode change.
+  MachineInstr *FirstInsertionPoint;
+
+  BlockData() : FirstInsertionPoint(nullptr) {};
 };
 
 namespace {
@@ -217,7 +224,7 @@ void SIModeRegister::insertSetreg(MachineBasicBlock &MBB, MachineInstr *MI,
 void SIModeRegister::processBlockPhase1(MachineBasicBlock &MBB,
                                         const SIInstrInfo *TII) {
   BlockData *NewInfo = new BlockData;
-  MachineInstr *InsertionPoint = 0;
+  MachineInstr *InsertionPoint = nullptr;
   bool RequirePending = true;
   Status IPChange;
   for (MachineInstr &MI : MBB) {
@@ -243,6 +250,8 @@ void SIModeRegister::processBlockPhase1(MachineBasicBlock &MBB,
         NewInfo->Change = NewInfo->Change.merge(InstrMode);
       } else {
         InsertionPoint = &MI;
+        if (!NewInfo->FirstInsertionPoint)
+          NewInfo->FirstInsertionPoint = &MI;
         IPChange = NewInfo->Change;
         NewInfo->Change = NewInfo->Change.merge(InstrMode);
       }
@@ -263,7 +272,7 @@ void SIModeRegister::processBlockPhase1(MachineBasicBlock &MBB,
       if (InsertionPoint) {
         // We need to insert a setreg at the InsertionPoint
         insertSetreg(MBB, InsertionPoint, TII, IPChange.delta(NewInfo->Change));
-        InsertionPoint = 0;
+        InsertionPoint = nullptr;
       }
       if (MI.getOpcode() == AMDGPU::S_SETREG_IMM32_B32) {
         unsigned Val = TII->getNamedOperand(MI, AMDGPU::OpName::imm)->getImm();
@@ -332,14 +341,14 @@ void SIModeRegister::processBlockPhase3(MachineBasicBlock &MBB,
   BlockData *BI = BlockInfo[MBB.getNumber()];
   if (!BI->Pred.isCompatible(BI->Require)) {
     Status Delta = BI->Pred.delta(BI->Require);
-    insertSetreg(MBB, &MBB.instr_front(), TII, Delta);
+    if (BI->FirstInsertionPoint)
+      insertSetreg(MBB, BI->FirstInsertionPoint, TII, Delta);
+    else
+      insertSetreg(MBB, &MBB.instr_front(), TII, Delta);
   }
 }
 
 bool SIModeRegister::runOnMachineFunction(MachineFunction &MF) {
-  if (skipFunction(MF.getFunction()))
-    return false;
-
   BlockInfo.resize(MF.getNumBlockIDs());
   const GCNSubtarget &ST = MF.getSubtarget<GCNSubtarget>();
   const SIInstrInfo *TII = ST.getInstrInfo();
@@ -357,8 +366,8 @@ bool SIModeRegister::runOnMachineFunction(MachineFunction &MF) {
     Phase2List.pop();
   }
 
-  // Phase 3 - add setregto the start of each block where the required entry
-  // mode is not satisfied by the exit mode of all its predecessors.
+  // Phase 3 - add an initial setreg to each block where the required entry mode
+  // is not satisfied by the exit mode of all its predecessors.
   for (MachineBasicBlock &BB : MF)
     processBlockPhase3(BB, TII);
 
