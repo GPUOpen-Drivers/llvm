@@ -5,6 +5,9 @@
 # CHECK-LABEL: name: interp_f16_default
 # CHECK-LABEL: bb.0:
 # CHECK: S_SETREG_IMM32_B32 3, 2177
+# CHECK-NEXT: V_INTERP_P1LL_F16
+# CHECK: S_SETREG_IMM32_B32 0, 2177
+# CHECK-NEXT: V_ADD_F16_e32
 # CHECK-NOT: S_SETREG_IMM32_B32
 
 name: interp_f16_default
@@ -27,6 +30,9 @@ body: |
 # CHECK-LABEL: name: interp_f16_explicit_rtz
 # CHECK-LABEL: bb.0:
 # CHECK: S_SETREG_IMM32_B32 3, 2177
+# CHECK-NEXT: V_MOV_B32_e32
+# CHECK: S_SETREG_IMM32_B32 0, 2177
+# CHECK-NEXT: V_ADD_F16_e32
 # CHECK-NOT: S_SETREG_IMM32_B32
 
 name: interp_f16_explicit_rtz
@@ -46,18 +52,44 @@ body: |
     S_ENDPGM
 ...
 ---
+# check that explicit RTN mode change is registered
+# CHECK-LABEL: name: explicit_rtn
+# CHECK-LABEL: bb.0:
+# CHECK: S_SETREG_IMM32_B32 3, 2177
+# CHECK-NEXT: V_INTERP_P1LL_F16
+# CHECK: S_SETREG_IMM32_B32 0, 2177
+# CHECK-NEXT: V_ADD_F16_e32
+# CHECK-NOT: S_SETREG_IMM32_B32
+
+name: explicit_rtn
+
+body: |
+  bb.0:
+    liveins: $sgpr0, $sgpr1, $sgpr2
+    $m0 = S_MOV_B32 killed $sgpr2
+    $vgpr0 = V_MOV_B32_e32 killed $sgpr0, implicit $exec, implicit $exec
+    $vgpr1 = V_INTERP_P1LL_F16 0, $vgpr0, 2, 1, 0, 0, 0, implicit $m0, implicit $exec
+    $vgpr2 = V_MOV_B32_e32 killed $sgpr1, implicit $exec, implicit $exec
+    $vgpr0 = V_INTERP_P1LL_F16 0, killed $vgpr0, 2, 1, -1, 0, 0, implicit $m0, implicit $exec
+    $vgpr1 = V_INTERP_P2_F16 0, $vgpr2, 2, 1, 0, killed $vgpr1, 0, 0, implicit $m0, implicit $exec
+    $vgpr0 = V_INTERP_P2_F16 0, killed $vgpr2, 2, 1, 0, killed $vgpr0, -1, 0, implicit $m0, implicit $exec
+    S_SETREG_IMM32_B32 0, 2177
+    $vgpr0 = V_ADD_F16_e32 killed $vgpr1, killed $vgpr0, implicit $exec
+    S_ENDPGM
+...
+---
 # check that the mode is unchanged from RTN for F64 instruction
 # CHECK-LABEL: name: rtn_default
 # CHECK-LABEL: bb.0:
 # CHECK-NOT: S_SETREG_IMM32_B32
-# CHECK: V_SQRT_F64
+# CHECK: V_FRACT_F64
 
 name: rtn_default
 
 body: |
   bb.0:
     liveins: $vgpr1_vgpr2
-    $vgpr1_vgpr2 = V_SQRT_F64_e32 killed $vgpr1_vgpr2, implicit $exec
+    $vgpr1_vgpr2 = V_FRACT_F64_e32 killed $vgpr1_vgpr2, implicit $exec
     S_ENDPGM
 ...
 ---
@@ -66,8 +98,8 @@ body: |
 # CHECK-LABEL: bb.0:
 # CHECK: S_SETREG_IMM32_B32 3, 2177
 # CHECK-NEXT: S_SETREG_IMM32_B32 0, 2177
+# CHECK-NEXT: V_FRACT_F64
 # CHECK-NOT: S_SETREG_IMM32_B32
-# CHECK: V_SQRT_F64
 
 name: rtn_from_rtz
 
@@ -75,7 +107,7 @@ body: |
   bb.0:
     liveins: $vgpr1_vgpr2
     S_SETREG_IMM32_B32 3, 2177
-    $vgpr1_vgpr2 = V_SQRT_F64_e32 killed $vgpr1_vgpr2, implicit $exec
+    $vgpr1_vgpr2 = V_FRACT_F64_e32 killed $vgpr1_vgpr2, implicit $exec
     S_ENDPGM
 ...
 ---
@@ -90,7 +122,7 @@ body: |
   bb.0:
     successors: %bb.1
     liveins: $vgpr1_vgpr2
-    $vgpr1_vgpr2 = V_SQRT_F64_e32 killed $vgpr1_vgpr2, implicit $exec
+    $vgpr1_vgpr2 = V_FRACT_F64_e32 killed $vgpr1_vgpr2, implicit $exec
     S_BRANCH %bb.1
 
   bb.1:
@@ -107,7 +139,7 @@ body: |
 # CHECK: V_INTERP_P1LL_F16
 # CHECK: V_INTERP_P2_F16
 # CHECK: S_SETREG_IMM32_B32 0, 2177
-# CHECK: V_SQRT_F64
+# CHECK: V_FRACT_F64
 # CHECK: S_SETREG_IMM32_B32 3, 2177
 # CHECK: V_INTERP_P2_F16
 
@@ -122,7 +154,7 @@ body: |
     $vgpr2 = V_MOV_B32_e32 $sgpr1, implicit $exec, implicit $exec
     $vgpr0 = V_INTERP_P1LL_F16 0, killed $vgpr0, 2, 1, -1, 0, 0, implicit $m0, implicit $exec
     $vgpr1 = V_INTERP_P2_F16 0, $vgpr2, 2, 1, 0, killed $vgpr1, 0, 0, implicit $m0, implicit $exec
-    $vgpr3_vgpr4 = V_SQRT_F64_e32 killed $vgpr3_vgpr4, implicit $exec
+    $vgpr3_vgpr4 = V_FRACT_F64_e32 killed $vgpr3_vgpr4, implicit $exec
     $vgpr0 = V_INTERP_P2_F16 0, killed $vgpr2, 2, 1, 0, killed $vgpr0, -1, 0, implicit $m0, implicit $exec
     $vgpr0 = V_ADD_F16_e32 killed $sgpr0, killed $vgpr0, implicit $exec
     S_ENDPGM
@@ -136,7 +168,7 @@ body: |
 # CHECK: V_INTERP_P1LL_F16
 # CHECK: V_INTERP_P2_F16
 # CHECK: S_SETREG_IMM32_B32 0, 2177
-# CHECK: V_SQRT_F64
+# CHECK: V_FRACT_F64
 # CHECK: S_SETREG_IMM32_B32 3, 2177
 # CHECK: V_INTERP_P2_F16
 
@@ -152,7 +184,7 @@ body: |
     $vgpr2 = V_MOV_B32_e32 $sgpr1, implicit $exec, implicit $exec
     $vgpr0 = V_INTERP_P1LL_F16 0, killed $vgpr0, 2, 1, -1, 0, 0, implicit $m0, implicit $exec
     $vgpr1 = V_INTERP_P2_F16 0, $vgpr2, 2, 1, 0, killed $vgpr1, 0, 0, implicit $m0, implicit $exec
-    $vgpr3_vgpr4 = V_SQRT_F64_e32 killed $vgpr3_vgpr4, implicit $exec
+    $vgpr3_vgpr4 = V_FRACT_F64_e32 killed $vgpr3_vgpr4, implicit $exec
     $vgpr0 = V_INTERP_P2_F16 0, killed $vgpr2, 2, 1, 0, killed $vgpr0, -1, 0, implicit $m0, implicit $exec
     $vgpr0 = V_ADD_F16_e32 killed $sgpr0, killed $vgpr0, implicit $exec
     S_ENDPGM
@@ -163,7 +195,7 @@ body: |
 # CHECK-LABEL: name: loop
 # CHECK-LABEL: bb.1:
 # CHECK: S_SETREG_IMM32_B32 0, 2177
-# CHECK: V_SQRT_F64
+# CHECK: V_FRACT_F64
 # CHECK-LABEL: bb.2:
 # CHECK: S_SETREG_IMM32_B32 3, 2177
 # CHECK: V_INTERP_P1LL_F16
@@ -180,7 +212,7 @@ body: |
 
   bb.1:
     successors: %bb.2
-    $vgpr3_vgpr4 = V_SQRT_F64_e32 killed $vgpr3_vgpr4, implicit $exec
+    $vgpr3_vgpr4 = V_FRACT_F64_e32 killed $vgpr3_vgpr4, implicit $exec
     S_BRANCH %bb.2
 
   bb.2:
@@ -199,7 +231,7 @@ body: |
 # CHECK-NOT: S_SETREG_IMM32_B32
 # CHECK-LABEL: bb.2:
 # CHECK: S_SETREG_IMM32_B32 0, 2177
-# CHECK: V_SQRT_F64_e32
+# CHECK: V_FRACT_F64_e32
 # CHECK-LABEL: bb.4:
 # CHECK: S_SETREG_IMM32_B32 3, 2177
 
@@ -219,7 +251,7 @@ body: |
 
   bb.2:
     successors: %bb.1, %bb.3
-    $vgpr3_vgpr4 = V_SQRT_F64_e32 killed $vgpr3_vgpr4, implicit $exec
+    $vgpr3_vgpr4 = V_FRACT_F64_e32 killed $vgpr3_vgpr4, implicit $exec
     S_CBRANCH_VCCZ %bb.1, implicit $vcc
     S_BRANCH %bb.3
 
@@ -286,7 +318,7 @@ body: |
 # CHECK-LABEL: name: multiple_mode_direct
 # CHECK-LABEL: bb.3:
 # CHECK: S_SETREG_IMM32_B32 0, 2177
-# CHECK: V_SQRT_F64_e32
+# CHECK: V_FRACT_F64_e32
 # CHECK-NOT: S_SETREG_IMM32_B32
 
 name: multiple_mode_direct
@@ -310,7 +342,7 @@ body: |
 
   bb.3:
     successors: %bb.4
-    $vgpr3_vgpr4 = V_SQRT_F64_e32 killed $vgpr3_vgpr4, implicit $exec
+    $vgpr3_vgpr4 = V_FRACT_F64_e32 killed $vgpr3_vgpr4, implicit $exec
     S_BRANCH %bb.4
 
   bb.4:
@@ -322,7 +354,7 @@ body: |
 # CHECK-LABEL: name: multiple_mode_indirect
 # CHECK-LABEL: bb.4:
 # CHECK: S_SETREG_IMM32_B32 0, 2177
-# CHECK: V_SQRT_F64_e32
+# CHECK: V_FRACT_F64_e32
 # CHECK-NOT: S_SETREG_IMM32_B32
 
 name: multiple_mode_indirect
@@ -351,7 +383,7 @@ body: |
 
   bb.4:
     successors: %bb.5
-    $vgpr3_vgpr4 = V_SQRT_F64_e32 killed $vgpr3_vgpr4, implicit $exec
+    $vgpr3_vgpr4 = V_FRACT_F64_e32 killed $vgpr3_vgpr4, implicit $exec
     S_BRANCH %bb.5
 
   bb.5:
@@ -360,7 +392,7 @@ body: |
 ---
 # CHECK-LABEL: name: pass_through_blocks
 # CHECK-LABEL: bb.0:
-# CHECK: V_SQRT_F64_e32
+# CHECK: V_FRACT_F64_e32
 # CHECK-NEXT: S_SETREG_IMM32_B32 3, 2177
 # CHECK-NOT: S_SETREG_IMM32_B32
 
@@ -370,7 +402,7 @@ body: |
   bb.0:
     successors: %bb.1
     liveins: $vgpr1_vgpr2
-    $vgpr1_vgpr2 = V_SQRT_F64_e32 killed $vgpr1_vgpr2, implicit $exec
+    $vgpr1_vgpr2 = V_FRACT_F64_e32 killed $vgpr1_vgpr2, implicit $exec
     $vgpr1 = V_INTERP_P1LL_F16 0, $vgpr0, 2, 1, 0, 0, 0, implicit $m0, implicit $exec
     S_BRANCH %bb.1
 
@@ -395,7 +427,7 @@ body: |
 # CHECK-LABEL: name: if_then_else
 # CHECK-LABEL: bb.3:
 # CHECK: S_SETREG_IMM32_B32 0, 2177
-# CHECK: V_SQRT_F64_e32
+# CHECK: V_FRACT_F64_e32
 # CHECK-NOT: S_SETREG_IMM32_B32
 
 name: if_then_else
@@ -419,7 +451,7 @@ body: |
 
   bb.3:
     successors: %bb.4
-    $vgpr3_vgpr4 = V_SQRT_F64_e32 killed $vgpr3_vgpr4, implicit $exec
+    $vgpr3_vgpr4 = V_FRACT_F64_e32 killed $vgpr3_vgpr4, implicit $exec
     S_BRANCH %bb.4
 
   bb.4:
