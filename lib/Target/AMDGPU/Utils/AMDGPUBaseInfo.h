@@ -431,9 +431,6 @@ bool isInlinableLiteralV216(int32_t Literal, bool HasInv2Pi);
 
 bool isArgPassedInSGPR(const Argument *Arg);
 
-/// \returns Whether the offset used in the SMRD offset field is aligned.
-bool isSMRDAligned(const MCSubtargetInfo &ST, int64_t ByteOffset);
-
 /// \returns The encoding that will be used for \p ByteOffset in the SMRD
 /// offset field.
 int64_t getSMRDEncodedOffset(const MCSubtargetInfo &ST, int64_t ByteOffset);
