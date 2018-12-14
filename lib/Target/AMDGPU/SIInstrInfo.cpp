@@ -2435,7 +2435,13 @@ bool SIInstrInfo::hasUnwantedEffectsWhenEXECEmpty(const MachineInstr &MI) const 
   //       EXEC = 0, but checking for that case here seems not worth it
   //       given the typical code patterns.
   if (Opcode == AMDGPU::S_SENDMSG || Opcode == AMDGPU::S_SENDMSGHALT ||
+      // FIXME: Skipping EXP/EXP_DONE temporarily disabled because we do not
+      // want to do that in a pixel shader. A better fix would be to have a
+      // pixel-shader-only pass that adds an extra EXP_DONE if there is no
+      // EXP_DONE in the final basic block.
+#if 0
       Opcode == AMDGPU::EXP || Opcode == AMDGPU::EXP_DONE ||
+#endif
       Opcode == AMDGPU::DS_ORDERED_COUNT)
     return true;
 
