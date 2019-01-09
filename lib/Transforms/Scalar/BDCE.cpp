@@ -34,6 +34,7 @@ using namespace llvm;
 STATISTIC(NumRemoved, "Number of instructions removed (unused)");
 STATISTIC(NumSimplified, "Number of instructions trivialized (dead bits)");
 
+
 /// If an instruction is trivialized (dead), then the chain of users of that
 /// instruction may need to be cleared of assumptions that can no longer be
 /// guaranteed correct.
