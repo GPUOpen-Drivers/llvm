@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; RUN: llc < %s -mtriple=amdgcn--amdpal -mcpu=tahiti | FileCheck --check-prefixes=PAL,CI --enable-var-scope %s
 ; RUN: llc < %s -mtriple=amdgcn--amdpal -mcpu=tonga | FileCheck --check-prefixes=PAL,VI --enable-var-scope %s
 

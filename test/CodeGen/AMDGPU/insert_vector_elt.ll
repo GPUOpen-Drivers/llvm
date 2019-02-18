@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; RUN: llc -verify-machineinstrs -mtriple=amdgcn-amd-amdhsa -mcpu=kaveri -mattr=-flat-for-global,+max-private-element-size-16 < %s | FileCheck -enable-var-scope -check-prefixes=GCN,SI,GCN-NO-TONGA %s
 ; RUN: llc -verify-machineinstrs -mtriple=amdgcn-amd-amdhsa -mcpu=tonga -mattr=-flat-for-global -mattr=+max-private-element-size-16 < %s | FileCheck -enable-var-scope -check-prefixes=GCN,VI,GCN-TONGA %s
 
