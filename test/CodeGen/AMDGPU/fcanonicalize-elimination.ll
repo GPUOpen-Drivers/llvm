@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; RUN: llc -march=amdgcn -mcpu=gfx801 -verify-machineinstrs -mattr=-fp32-denormals < %s | FileCheck -enable-var-scope -check-prefixes=GCN,VI,VI-FLUSH,GCN-FLUSH,GCN-NOEXCEPT %s
 ; RUN: llc -march=amdgcn -mcpu=gfx801 -verify-machineinstrs -mattr=-fp32-denormals,+fp-exceptions < %s | FileCheck -enable-var-scope -check-prefixes=GCN,GCN-EXCEPT,VI,VI-FLUSH,GCN-FLUSH %s
 ; RUN: llc -march=amdgcn -mcpu=gfx801 -verify-machineinstrs -mattr=+fp32-denormals < %s | FileCheck -enable-var-scope -check-prefixes=GCN,VI,VI-DENORM,GCN-DENORM,GCN-NOEXCEPT %s
