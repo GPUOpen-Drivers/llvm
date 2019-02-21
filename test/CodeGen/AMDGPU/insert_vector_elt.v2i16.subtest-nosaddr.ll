@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; RUN: llc -verify-machineinstrs -mtriple=amdgcn-amd-amdhsa -mcpu=fiji -enable-amdgpu-aa=0 -mattr=+flat-for-global < %s | FileCheck -enable-var-scope -check-prefixes=GCN,CIVI,VI,GFX89 %s
 ; RUN: llc -verify-machineinstrs -mtriple=amdgcn-amd-amdhsa -mcpu=hawaii -enable-amdgpu-aa=0 -mattr=+flat-for-global < %s | FileCheck -enable-var-scope -check-prefixes=GCN,CIVI,CI %s
 
