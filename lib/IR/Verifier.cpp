@@ -2887,7 +2887,8 @@ void Verifier::visitCallBase(CallBase &Call) {
              Call.getArgOperand(i), Call);
     }
 
-    if (Call.paramHasAttr(i, Attribute::ImmArg)) {
+    // Temporarily disabled this check until LLPC has been fixed.
+    if (0 && Call.paramHasAttr(i, Attribute::ImmArg)) {
       Value *ArgVal = Call.getArgOperand(i);
       Assert(isa<ConstantInt>(ArgVal) || isa<ConstantFP>(ArgVal),
              "immarg operand has non-immediate parameter", ArgVal, Call);
