@@ -165,6 +165,13 @@ static cl::opt<bool> EnableSIModeRegisterPass(
   cl::init(true),
   cl::Hidden);
 
+// Enable scratch bounds checking
+static cl::opt<bool> EnableScratchBoundsChecking(
+  "amdgpu-scratch-bounds-checking",
+  cl::desc("Enable scratch bounds checking"),
+  cl::init(false),
+  cl::Hidden);
+
 extern "C" void LLVMInitializeAMDGPUTarget() {
   // Register the target
   RegisterTargetMachine<R600TargetMachine> X(getTheAMDGPUTarget());
@@ -871,6 +878,9 @@ bool GCNPassConfig::addGlobalInstructionSelect() {
 void GCNPassConfig::addPreRegAlloc() {
   if (LateCFGStructurize) {
     addPass(createAMDGPUMachineCFGStructurizerPass());
+  }
+  if (EnableScratchBoundsChecking) {
+    addPass(createSIInsertScratchBoundsPass());
   }
   addPass(createSIInsertWaterfallPass());
   addPass(createSIWholeQuadModePass());
