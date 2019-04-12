@@ -3712,6 +3712,8 @@ SDValue AMDGPUTargetLowering::performFNegCombine(SDNode *N,
       RHS = RHS.getOperand(0);
 
     SDValue Res = DAG.getNode(ISD::FADD, SL, VT, LHS, RHS, N0->getFlags());
+    if (Res.getOpcode() != ISD::FADD)
+      return SDValue(); // Op got folded away.
     if (!N0.hasOneUse())
       DAG.ReplaceAllUsesWith(N0, DAG.getNode(ISD::FNEG, SL, VT, Res));
     return Res;
@@ -3731,6 +3733,8 @@ SDValue AMDGPUTargetLowering::performFNegCombine(SDNode *N,
       RHS = DAG.getNode(ISD::FNEG, SL, VT, RHS);
 
     SDValue Res = DAG.getNode(Opc, SL, VT, LHS, RHS, N0->getFlags());
+    if (Res.getOpcode() != Opc)
+      return SDValue(); // Op got folded away.
     if (!N0.hasOneUse())
       DAG.ReplaceAllUsesWith(N0, DAG.getNode(ISD::FNEG, SL, VT, Res));
     return Res;
@@ -3758,6 +3762,8 @@ SDValue AMDGPUTargetLowering::performFNegCombine(SDNode *N,
       RHS = RHS.getOperand(0);
 
     SDValue Res = DAG.getNode(Opc, SL, VT, LHS, MHS, RHS);
+    if (Res.getOpcode() != Opc)
+      return SDValue(); // Op got folded away.
     if (!N0.hasOneUse())
       DAG.ReplaceAllUsesWith(N0, DAG.getNode(ISD::FNEG, SL, VT, Res));
     return Res;
@@ -3786,6 +3792,8 @@ SDValue AMDGPUTargetLowering::performFNegCombine(SDNode *N,
     unsigned Opposite = inverseMinMax(Opc);
 
     SDValue Res = DAG.getNode(Opposite, SL, VT, NegLHS, NegRHS, N0->getFlags());
+    if (Res.getOpcode() != Opposite)
+      return SDValue(); // Op got folded away.
     if (!N0.hasOneUse())
       DAG.ReplaceAllUsesWith(N0, DAG.getNode(ISD::FNEG, SL, VT, Res));
     return Res;
@@ -3796,6 +3804,8 @@ SDValue AMDGPUTargetLowering::performFNegCombine(SDNode *N,
       Ops[I] = DAG.getNode(ISD::FNEG, SL, VT, N0->getOperand(I), N0->getFlags());
 
     SDValue Res = DAG.getNode(AMDGPUISD::FMED3, SL, VT, Ops, N0->getFlags());
+    if (Res.getOpcode() != AMDGPUISD::FMED3)
+      return SDValue(); // Op got folded away.
     if (!N0.hasOneUse())
       DAG.ReplaceAllUsesWith(N0, DAG.getNode(ISD::FNEG, SL, VT, Res));
     return Res;
