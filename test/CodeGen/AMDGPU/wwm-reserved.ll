@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; RUN: llc -O0 -march=amdgcn -mcpu=gfx900 -amdgpu-dpp-combine=false -verify-machineinstrs < %s | FileCheck -check-prefixes=GFX9,GFX9-O0 %s
 ; RUN: llc -march=amdgcn -mcpu=gfx900 -amdgpu-dpp-combine=false -verify-machineinstrs < %s | FileCheck -check-prefixes=GFX9,GFX9-O3 %s
 
