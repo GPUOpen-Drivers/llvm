@@ -1184,17 +1184,38 @@ Value *InstCombiner::SimplifyDemandedVectorElts(Value *V, APInt DemandedElts,
     // operands we may have.  We know there must be at least one, or we
     // wouldn't have a vector result to get here. Note that we intentionally
     // merge the undef bits here since gepping with either an undef base or
-    // index results in undef. 
-    for (unsigned i = 0; i < I->getNumOperands(); i++) {
+    // index results in undef.
+
+    auto simplifyGEPOperand = [&](unsigned i, bool isIndexStruct) -> bool {
       if (isa<UndefValue>(I->getOperand(i))) {
         // If the entire vector is undefined, just return this info.
         UndefElts = EltMask;
-        return nullptr;
+        return true;
       }
+
       if (I->getOperand(i)->getType()->isVectorTy()) {
-        APInt UndefEltsOp(VWidth, 0);
-        simplifyAndSetOp(I, i, DemandedElts, UndefEltsOp);
-        UndefElts |= UndefEltsOp;
+        // If we have a vector of indices into a struct element of the GEP, and
+        // change a single element this into an undef while preserving the
+        // others, that breaks the guarantee that each index of a
+        // vector-of-pointers into a struct will have the same index.
+        if (!isIndexStruct) {
+          APInt UndefEltsOp(VWidth, 0);
+          simplifyAndSetOp(I, i, DemandedElts, UndefEltsOp);
+          UndefElts |= UndefEltsOp;
+        }
+      }
+
+      return false;
+    };
+
+    if (simplifyGEPOperand(0, false)) {
+      return nullptr;
+    }
+
+    gep_type_iterator GTI = gep_type_begin(cast<GetElementPtrInst>(I));
+    for (unsigned i = 1; i < I->getNumOperands(); i++, GTI++) {
+      if (simplifyGEPOperand(i, GTI.isStruct())) {
+        return nullptr;
       }
     }
 
