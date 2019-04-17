@@ -47,13 +47,16 @@
 ; GCN:      s_or_b64            exec, exec, [[SAVE_EXEC]]
 ; GCN:      s_and_b64           [[TMP0:s\[[0-9]+:[0-9]+\]]], exec, [[BREAK_INNER]]
 ; GCN:      s_or_b64            [[TMP0]], [[TMP0]], [[LEFT_INNER]]
+; GCN:      s_andn2_b64         [[BREAK_OUTER2:s\[[0-9]+:[0-9]+\]]], [[BREAK_OUTER2]], exec
+; GCN:      s_and_b64           [[LEFT_INNER]], [[BREAK_OUTER]], exec
+; GCN:      s_or_b64            [[BREAK_OUTER2]], [[BREAK_OUTER2]], [[LEFT_INNER]]
 ; GCN:      s_mov_b64           [[LEFT_INNER]], [[TMP0]]
 ; GCN:      s_andn2_b64         exec, exec, [[TMP0]]
 ; GCN:      s_cbranch_execnz    [[INNER_LOOP]]
 
 ; GCN: ; %Flow2
 ; GCN:      s_or_b64            exec, exec, [[TMP0]]
-; GCN:      s_and_b64           [[TMP1:s\[[0-9]+:[0-9]+\]]], exec, [[BREAK_OUTER]]
+; GCN:      s_and_b64           [[TMP1:s\[[0-9]+:[0-9]+\]]], exec, [[BREAK_OUTER2]]
 ; GCN:      s_or_b64            [[TMP1]], [[TMP1]], [[LEFT_OUTER]]
 ; GCN:      s_mov_b64           [[LEFT_OUTER]], [[TMP1]]
 ; GCN:      s_andn2_b64         exec, exec, [[TMP1]]
