@@ -95,9 +95,7 @@ namespace {
       const {
       unsigned Offset = TII->getNamedOperand(*Inst,
                                              AMDGPU::OpName::offset)->getImm();
-      if (AMDGPU::isSMRDOffsetByte(*ST))
-        return Offset / BYTES_PER_DWORD;
-      return Offset;
+      return Offset / AMDGPU::getSMRDEncodedOffset(*ST, BYTES_PER_DWORD);
     }
     MachineOperand *getDest(const SIInstrInfo *TII) const {
       return TII->getNamedOperand(*Inst, AMDGPU::OpName::sdst);

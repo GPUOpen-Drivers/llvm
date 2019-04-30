@@ -1142,10 +1142,6 @@ SIModeRegisterDefaults::SIModeRegisterDefaults(const Function &F) {
     DX10Clamp = DX10ClampAttr == "true";
 }
 
-bool isSMRDOffsetByte(const MCSubtargetInfo &ST) {
-  return isGCN3Encoding(ST);
-}
-
 namespace {
 
 struct SourceOfDivergence {
