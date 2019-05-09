@@ -91,6 +91,10 @@ using namespace llvm::PatternMatch;
 
 STATISTIC(NumRemoved, "Number of unreachable basic blocks removed");
 
+// Max recursion depth for collectBitParts used when detecting bswap and
+// bitreverse idioms
+static const unsigned BitPartRecursionMaxDepth = 64;
+
 //===----------------------------------------------------------------------===//
 //  Local constant propagation.
 //
@@ -2616,7 +2620,7 @@ struct BitPart {
 /// does not invalidate internal references (std::map instead of DenseMap).
 static const Optional<BitPart> &
 collectBitParts(Value *V, bool MatchBSwaps, bool MatchBitReversals,
-                std::map<Value *, Optional<BitPart>> &BPS) {
+                std::map<Value *, Optional<BitPart>> &BPS, int Depth) {
   auto I = BPS.find(V);
   if (I != BPS.end())
     return I->second;
@@ -2624,13 +2628,19 @@ collectBitParts(Value *V, bool MatchBSwaps, bool MatchBitReversals,
   auto &Result = BPS[V] = None;
   auto BitWidth = cast<IntegerType>(V->getType())->getBitWidth();
 
+  // Prevent stack overflow by limiting the recursion depth
+  if (Depth == BitPartRecursionMaxDepth) {
+    LLVM_DEBUG(dbgs() << "collectBitParts max recursion depth reached.\n");
+    return Result;
+  }
+
   if (Instruction *I = dyn_cast<Instruction>(V)) {
     // If this is an or instruction, it may be an inner node of the bswap.
     if (I->getOpcode() == Instruction::Or) {
       auto &A = collectBitParts(I->getOperand(0), MatchBSwaps,
-                                MatchBitReversals, BPS);
+                                MatchBitReversals, BPS, Depth + 1);
       auto &B = collectBitParts(I->getOperand(1), MatchBSwaps,
-                                MatchBitReversals, BPS);
+                                MatchBitReversals, BPS, Depth + 1);
       if (!A || !B)
         return Result;
 
@@ -2663,7 +2673,7 @@ collectBitParts(Value *V, bool MatchBSwaps, bool MatchBitReversals,
         return Result;
 
       auto &Res = collectBitParts(I->getOperand(0), MatchBSwaps,
-                                  MatchBitReversals, BPS);
+                                  MatchBitReversals, BPS, Depth + 1);
       if (!Res)
         return Result;
       Result = Res;
@@ -2695,7 +2705,7 @@ collectBitParts(Value *V, bool MatchBSwaps, bool MatchBitReversals,
         return Result;
 
       auto &Res = collectBitParts(I->getOperand(0), MatchBSwaps,
-                                  MatchBitReversals, BPS);
+                                  MatchBitReversals, BPS, Depth + 1);
       if (!Res)
         return Result;
       Result = Res;
@@ -2710,7 +2720,7 @@ collectBitParts(Value *V, bool MatchBSwaps, bool MatchBitReversals,
     // If this is a zext instruction zero extend the result.
     if (I->getOpcode() == Instruction::ZExt) {
       auto &Res = collectBitParts(I->getOperand(0), MatchBSwaps,
-                                  MatchBitReversals, BPS);
+                                  MatchBitReversals, BPS, Depth + 1);
       if (!Res)
         return Result;
 
@@ -2772,7 +2782,7 @@ bool llvm::recognizeBSwapOrBitReverseIdiom(
 
   // Try to find all the pieces corresponding to the bswap.
   std::map<Value *, Optional<BitPart>> BPS;
-  auto Res = collectBitParts(I, MatchBSwaps, MatchBitReversals, BPS);
+  auto Res = collectBitParts(I, MatchBSwaps, MatchBitReversals, BPS, 0);
   if (!Res)
     return false;
   auto &BitProvenance = Res->Provenance;
