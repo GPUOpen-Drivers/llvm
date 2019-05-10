@@ -92,6 +92,7 @@ add_llvm_target(AMDGPUCodeGen
   R600RegisterInfo.cpp
   SIAddIMGInit.cpp
   SIAnnotateControlFlow.cpp
+  SIFixScratchSize.cpp
   SIFixSGPRCopies.cpp
   SIFixupVectorISel.cpp
   SIFixVGPRCopies.cpp
