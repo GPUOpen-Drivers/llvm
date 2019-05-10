@@ -54,6 +54,7 @@ FunctionPass *createSIFixSGPRCopiesPass();
 FunctionPass *createSIBufMemMergePass();
 FunctionPass *createSIMemoryLegalizerPass();
 FunctionPass *createSIInsertScratchBoundsPass();
+FunctionPass *createSIFixScratchSizePass();
 FunctionPass *createSIInsertWaitcntsPass();
 FunctionPass *createSIInsertWaterfallPass();
 FunctionPass *createSIPreAllocateWWMRegsPass();
@@ -153,6 +154,10 @@ extern char &SILowerControlFlowID;
 
 void initializeSIInsertScratchBoundsPass(PassRegistry &);
 extern char &SIInsertScratchBoundsID;
+
+void initializeSIFixScratchSizePass(PassRegistry &);
+extern char &SIFixScratchSizeID;
+extern const char *const SIScratchSizeSymbol;
 
 void initializeSIInsertSkipsPass(PassRegistry &);
 extern char &SIInsertSkipsPassID;
