@@ -42,7 +42,7 @@ static unsigned getWFBeginSize(const unsigned Opcode) {
     break;
   }
 
-  return 0; // Not SI_WATERFALL_READFIRSTLANE_*
+  return 0; // Not SI_WATERFALL_BEGIN_*
 }
 
 static unsigned getWFRFLSize(const unsigned Opcode) {
@@ -76,7 +76,7 @@ static unsigned getWFEndSize(const unsigned Opcode) {
     break;
   }
 
-  return 0; // Not SI_WATERFALL_READFIRSTLANE_*
+  return 0; // Not SI_WATERFALL_END_*
 }
 
 static unsigned getWFLastUseSize(const unsigned Opcode) {
@@ -158,6 +158,7 @@ static void readFirstLaneReg(MachineBasicBlock &MBB, MachineRegisterInfo *MRI,
                              MachineOperand &RFLSrcOp) {
   auto RFLRegRC = MRI->getRegClass(RFLReg);
   uint32_t RegSize = RI->getRegSizeInBits(*RFLRegRC) / 32;
+  assert(RI->hasVGPRs(MRI->getRegClass(RFLSrcReg)) && "unexpected uniform operand for readfirstlane");
 
   if (RegSize == 1)
     BuildMI(MBB, I, DL, TII->get(AMDGPU::V_READFIRSTLANE_B32), RFLReg)
@@ -177,6 +178,32 @@ static void readFirstLaneReg(MachineBasicBlock &MBB, MachineRegisterInfo *MRI,
       MIB.addImm(RI->getSubRegFromChannel(i));
     }
   }
+}
+
+// Check if operand is uniform by checking:
+// 1. Trivially detectable as operand in SGPR
+// 2. Direct def is from an SGPR->VGPR copy (which may happen if assumed non-uniform value
+//    turns out to be uniform)
+static unsigned getUniformOperandReplacementReg(MachineRegisterInfo *MRI,
+                                                const SIRegisterInfo *RI,
+                                                unsigned Reg) {
+  auto RegRC = MRI->getRegClass(Reg);
+  if (!RI->hasVGPRs(RegRC)) {
+    return Reg;
+  }
+
+  // Check for operand def being a copy from SGPR
+  MachineInstr *DefMI = MRI->getVRegDef(Reg);
+  if (DefMI->isFullCopy()) {
+    auto const &DefSrcOp = DefMI->getOperand(1);
+    if (DefSrcOp.isReg() &&
+        TargetRegisterInfo::isVirtualRegister(DefSrcOp.getReg())) {
+      unsigned ReplaceReg = DefSrcOp.getReg();
+      if (!RI->hasVGPRs(MRI->getRegClass(ReplaceReg)))
+        return ReplaceReg;
+    }
+  }
+  return AMDGPU::NoRegister;
 }
 
 static unsigned compareIdx(MachineBasicBlock &MBB, MachineRegisterInfo *MRI,
@@ -368,6 +395,13 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
     // removed with the src replacing all dst uses
     auto Index = TII->getNamedOperand(*(Item.Begin), AMDGPU::OpName::idx);
     auto IndexRC = MRI->getRegClass(Index->getReg());
+
+    if (!RI->hasVGPRs(IndexRC)) {
+      // Waterfall loop index is uniform! Loop can be removed
+      // TODO:: Implement loop removal
+      LLVM_DEBUG(dbgs() << "Uniform loop detected - waterfall loop is redundant\n");
+    }
+
     auto IndexSRC = RI->getEquivalentSGPRClass(IndexRC);
 
     MachineBasicBlock::iterator I(Item.Begin);
@@ -479,10 +513,15 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
         Item.RFLRegs.push_back(CurrentIdxReg);
         MRI->replaceRegWith(RFLDstReg, CurrentIdxReg);
       } else {
-        Item.RFLRegs.push_back(RFLDstReg);
-        // Insert function to expand to required size here
-        readFirstLaneReg(LoopBB, MRI, RI, TII, J, DL, RFLDstReg, RFLSrcReg,
-                         *RFLSrcOp);
+        unsigned ReplaceReg = getUniformOperandReplacementReg(MRI, RI, RFLSrcReg);
+        if (ReplaceReg != AMDGPU::NoRegister) {
+          MRI->replaceRegWith(RFLDstReg, ReplaceReg);
+        } else {
+          Item.RFLRegs.push_back(RFLDstReg);
+          // Insert function to expand to required size here
+          readFirstLaneReg(LoopBB, MRI, RI, TII, J, DL, RFLDstReg, RFLSrcReg,
+                           *RFLSrcOp);
+        }
       }
     }
 
