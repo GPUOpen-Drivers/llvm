@@ -272,21 +272,66 @@ define amdgpu_ps void @test_waterfall_non_uniform_img_single_store(<8 x i32> add
   ret void
 }
 
+; GCN-LABEL: {{^}}test_remove_waterfall_last_use:
+; GCN: s_load_dwordx8 s{{\[}}[[RSRCSTART:[0-9]+]]:[[RSRCEND:[0-9]+]]{{\]}}, s[{{[0-9]+:[0-9]+}}]
+; GCN-DAG: image_store v[{{[0-9]+:[0-9]+}}], v{{[0-9]+}}, s{{\[}}[[RSRCSTART]]:[[RSRCEND]]{{\]}} dmask:0xf unorm
+define amdgpu_ps void @test_remove_waterfall_last_use(<8 x i32> addrspace(4)* inreg %in, i32 %index, i32 %s,
+                                                      <4 x float> %data) #1 {
+  %rsrc = load <8 x i32>, <8 x i32> addrspace(4) * %in, align 32
+  %wf_token = call i32 @llvm.amdgcn.waterfall.begin.i32(i32 %index)
+  %s_rsrc = call <8 x i32> @llvm.amdgcn.waterfall.readfirstlane.v8i32.v8i32(i32 %wf_token, <8 x i32> %rsrc)
+  %s_rsrc_use = call <8 x i32> @llvm.amdgcn.waterfall.last.use.v8i32(i32 %wf_token, <8 x i32> %s_rsrc)
+  call void @llvm.amdgcn.image.store.1d.v4f32.i32(<4 x float> %data, i32 15, i32 %s, <8 x i32> %s_rsrc_use, i32 0, i32 0)
 
-; define amdgpu_ps i32 @test_waterfall_sgpr_dynamic_idx(<16 x i32> inreg %vec_idx, i32 %idx, i32 inreg %s_b_val) #1 {
-;   %tok = call i32 @llvm.amdgcn.waterfall.begin.i32(i32 %idx)
-;   %val = call i32 @llvm.amdgcn.waterfall.readfirstlane.i32.i32(i32 %tok, i32 %idx)
-;   %val.1 = shl i32 %val, 1
-;   %s_idx = extractelement <16 x i32> %vec_idx, i32 %val.1
-;   %val.2 = or i32 %val.1, 1
-;   %s_idx.1 = extractelement <16 x i32> %vec_idx, i32 %val.2
-;   %s_idx.2 = and i32 %s_idx.1, 65535
-;   %s_idx_vec = insertelement <4 x i32> <i32 undef, i32 undef, i32 -1, i32 151468>, i32 %s_idx, i32 0
-;   %s_idx_vec.1 = insertelement <4 x i32> %s_idx_vec, i32 %s_idx.2, i32 1
-;   %res = call i32 @llvm.amdgcn.s.buffer.load.i32(<4 x i32> %s_idx_vec.1, i32 %s_b_val, i1 false)
-;   %res.1 = call i32 @llvm.amdgcn.waterfall.end.i32(i32 %tok, i32 %res)
-;   ret i32 %res.1
-; }
+  ret void
+}
+
+; GCN-LABEL: {{^}}test_remove_waterfall_multi_rl:
+; GCN: s_load_dwordx8 s{{\[}}[[RSRCSTART:[0-9]+]]:[[RSRCEND:[0-9]+]]{{\]}}, s[{{[0-9]+:[0-9]+}}]
+; GCN: s_load_dwordx4 s{{\[}}[[SAMPSTART:[0-9]+]]:[[SAMPEND:[0-9]+]]{{\]}}, s[{{[0-9]+:[0-9]+}}]
+; GCN-DAG: image_sample v[{{[0-9]+:[0-9]+}}], v{{[0-9]+}}, s{{\[}}[[RSRCSTART]]:[[RSRCEND]]{{\]}}, s{{\[}}[[SAMPSTART]]:[[SAMPEND]]{{\]}} dmask:0xf
+define amdgpu_ps <4 x float> @test_remove_waterfall_multi_rl(<8 x i32> addrspace(4)* inreg %in,
+                                                             <4 x i32> addrspace(4)* inreg %samp_in,
+                                                             i32 %index, float %s, i32 inreg %val1, i32 inreg %val2) #1 {
+  %wf_token = call i32 @llvm.amdgcn.waterfall.begin.i32(i32 %index)
+  %s_idx = call i32 @llvm.amdgcn.waterfall.readfirstlane.i32.i32(i32 %wf_token, i32 %val1)
+  %s_idx2 = call i32 @llvm.amdgcn.waterfall.readfirstlane.i32.i32(i32 %wf_token, i32 %val2)
+  %ptr = getelementptr <8 x i32>, <8 x i32> addrspace(4)* %in, i32 %s_idx
+  %ptr2 = getelementptr <4 x i32>, <4 x i32> addrspace(4)* %samp_in, i32 %s_idx2
+  %rsrc = load <8 x i32>, <8 x i32> addrspace(4) * %ptr, align 32
+  %samp = load <4 x i32>, <4 x i32> addrspace(4) * %ptr2, align 32
+  %r = call <4 x float> @llvm.amdgcn.image.sample.1d.v4f32.f32(i32 15, float %s, <8 x i32> %rsrc, <4 x i32> %samp, i1 0, i32 0, i32 0)
+  %r1 = call <4 x float> @llvm.amdgcn.waterfall.end.v4f32(i32 %wf_token, <4 x float> %r)
+
+  ret <4 x float> %r1
+}
+
+; GCN-LABEL: {{^}}test_keep_waterfall_multi_rl:
+; GCN: {{^}}BB9_1:
+; GCN: v_readfirstlane_b32 s[[FIRSTVAL:[0-9]+]], v5
+; GCN: s_add_u32 s[[NONUSTART:[0-9]+]], s0, s[[FIRSTVAL]]
+; GCN: s_addc_u32 s[[NONUEND:[0-9]+]], s1, s{{[0-9]+}}
+; GCN: s_add_u32 s[[UNISTART:[0-9]+]], s2, s{{[0-9]+}}
+; GCN: s_addc_u32 s[[UNIEND:[0-9]+]], s3, s{{[0-9]+}}
+; GCN: s_load_dwordx8 s{{\[}}[[RSRCSTART:[0-9]+]]:[[RSRCEND:[0-9]+]]{{\]}}, s{{\[}}[[NONUSTART]]:[[NONUEND]]{{\]}}
+; GCN: s_load_dwordx4 s{{\[}}[[SAMPSTART:[0-9]+]]:[[SAMPEND:[0-9]+]]{{\]}}, s{{\[}}[[UNISTART]]:[[UNIEND]]{{\]}}
+; GCN-DAG: image_sample v[{{[0-9]+:[0-9]+}}], v{{[0-9]+}}, s{{\[}}[[RSRCSTART]]:[[RSRCEND]]{{\]}}, s{{\[}}[[SAMPSTART]]:[[SAMPEND]]{{\]}} dmask:0xf
+; GCN: s_cbranch_execnz BB9_1
+define amdgpu_ps <4 x float> @test_keep_waterfall_multi_rl(<8 x i32> addrspace(4)* inreg %in,
+                                                           <4 x i32> addrspace(4)* inreg %samp_in,
+                                                           i32 %index, float %s, i32 inreg %val) #1 {
+  %wf_token = call i32 @llvm.amdgcn.waterfall.begin.i32(i32 %index)
+  %s_idx = call i32 @llvm.amdgcn.waterfall.readfirstlane.i32.i32(i32 %wf_token, i32 %index)
+  %s_idx2 = call i32 @llvm.amdgcn.waterfall.readfirstlane.i32.i32(i32 %wf_token, i32 %val)
+  %ptr = getelementptr <8 x i32>, <8 x i32> addrspace(4)* %in, i32 %s_idx
+  %ptr2 = getelementptr <4 x i32>, <4 x i32> addrspace(4)* %samp_in, i32 %s_idx2
+  %rsrc = load <8 x i32>, <8 x i32> addrspace(4) * %ptr, align 32
+  %samp = load <4 x i32>, <4 x i32> addrspace(4) * %ptr2, align 32
+  %r = call <4 x float> @llvm.amdgcn.image.sample.1d.v4f32.f32(i32 15, float %s, <8 x i32> %rsrc, <4 x i32> %samp, i1 0, i32 0, i32 0)
+  %r1 = call <4 x float> @llvm.amdgcn.waterfall.end.v4f32(i32 %wf_token, <4 x float> %r)
+
+  ret <4 x float> %r1
+}
 
 
 declare i32 @llvm.amdgcn.waterfall.begin.i32(i32) #6
