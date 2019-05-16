@@ -341,6 +341,7 @@ public:
     MachineFunctionPass::getAnalysisUsage(AU);
   }
 
+  bool removeRedundantWaterfall(WaterfallWorkitem &Item);
   bool processWaterfall(MachineBasicBlock &MBB);
 
   bool runOnMachineFunction(MachineFunction &MF) override;
@@ -359,6 +360,85 @@ FunctionPass *llvm::createSIInsertWaterfallPass() {
   return new SIInsertWaterfall;
 }
 
+bool SIInsertWaterfall::removeRedundantWaterfall(WaterfallWorkitem &Item) {
+  // In some cases, the waterfall is actually redundant
+  // If all the readfirstlane intrinsics are actually for uniform values and 
+  // the token used in the begin/end isn't used in anything else the waterfall
+  // can be removed.
+  // The readfirstlane intrinsics are replaced with the uniform source value,
+  // the loop is removed and the defs in the end intrinsics are just replaced with
+  // the input operands
+
+  // First step is to identify any readfirstlane intrinsics that are actually
+  // uniform
+  bool LoopRemoved = false;
+  unsigned Removed = 0;
+  std::vector<MachineInstr *> NewRFLList;
+  std::vector<MachineInstr *> ToRemoveRFLList;
+  for (auto RFLMI : Item.RFLList) {
+    auto RFLSrcOp = TII->getNamedOperand(*RFLMI, AMDGPU::OpName::src);
+    auto RFLDstOp = TII->getNamedOperand(*RFLMI, AMDGPU::OpName::dst);
+    unsigned RFLSrcReg = RFLSrcOp->getReg();
+    unsigned RFLDstReg = RFLDstOp->getReg();
+
+    unsigned ReplaceReg = getUniformOperandReplacementReg(MRI, RI, RFLSrcReg);
+    if (ReplaceReg != AMDGPU::NoRegister) {
+      MRI->replaceRegWith(RFLDstReg, ReplaceReg);
+      Removed++;
+      ToRemoveRFLList.push_back(RFLMI);
+    } else {
+      NewRFLList.push_back(RFLMI);
+    }
+  }
+
+  if (Removed == Item.RFLList.size()) {
+    // Removed all of the RFLs
+    // We can remove the waterfall loop entirely
+
+    // Protocol is to replace all dst operands for the waterfall_end intrinsics with
+    // their src operands.
+    // Replace all last_use dst operands with their src operands
+    // We don't need to check that the loop index isn't used anywhere as the
+    // protocol for waterfall intrinsics is to only use the begin index via a
+    // readfirstlane intrinsic anyway (which should also be removed)
+    // Any problems due to errors in this pass around loop removal will be
+    // picked up later by e.g. use before def errors
+    LLVM_DEBUG(dbgs() << "detected case for waterfall loop removal - already all uniform\n");
+    for (auto EndMI : Item.EndList) {
+      auto EndDstReg = TII->getNamedOperand(*EndMI, AMDGPU::OpName::dst)->getReg();
+      auto EndSrcReg = TII->getNamedOperand(*EndMI, AMDGPU::OpName::src)->getReg();
+      MRI->replaceRegWith(EndDstReg, EndSrcReg);
+    }
+    for (auto LUMI : Item.LastUseList) {
+      auto LUDstReg = TII->getNamedOperand(*LUMI, AMDGPU::OpName::dst)->getReg();
+      auto LUSrcReg = TII->getNamedOperand(*LUMI, AMDGPU::OpName::src)->getReg();
+      MRI->replaceRegWith(LUDstReg, LUSrcReg);
+    }
+
+    Item.Begin->eraseFromParent();
+    for (auto RFLMI : Item.RFLList)
+      RFLMI->eraseFromParent();
+    for (auto ENDMI : Item.EndList)
+      ENDMI->eraseFromParent();
+    for (auto LUMI : Item.LastUseList)
+      LUMI->eraseFromParent();
+
+    LoopRemoved = true;
+
+  } else if (Removed) {
+    LLVM_DEBUG(dbgs() << "Removed " << Removed <<
+               " waterfall rfl intrinsics due to being uniform - updating remaining rfl list\n");
+    // TODO: there's an opportunity to pull the DAG involving the (removed) rfls
+    // out of the waterfall loop
+    Item.RFLList.clear();
+    std::copy(NewRFLList.begin(), NewRFLList.end(), std::back_inserter(Item.RFLList));
+    for (auto RFLMI : ToRemoveRFLList)
+      RFLMI->eraseFromParent();
+  }
+
+  return LoopRemoved;
+}
+
 bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
   bool Changed = false;
   MachineFunction &MF = *MBB.getParent();
@@ -370,7 +450,7 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
   // If there are multiple waterfall loops they must also be disjoint
 
   for (WaterfallWorkitem &Item : Worklist) {
-    LLVM_DEBUG(dbgs() << "Processing " << Item.Begin << "\n");
+    LLVM_DEBUG(dbgs() << "Processing " << *Item.Begin << "\n");
 
     LLVM_DEBUG(
         for (auto RUse = MRI->use_begin(Item.TokReg), RSE = MRI->use_end();
@@ -384,6 +464,11 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
            (Item.EndList.size() || Item.LastUseList.size()) &&
            "SI_WATERFALL* pseudo instruction group must have at least 1 of "
            "each type");
+
+    if (removeRedundantWaterfall(Item)) {
+      Changed = true;
+      continue;
+    }
 
     // Insert the waterfall loop code around the identified region of
     // instructions
@@ -513,15 +598,10 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
         Item.RFLRegs.push_back(CurrentIdxReg);
         MRI->replaceRegWith(RFLDstReg, CurrentIdxReg);
       } else {
-        unsigned ReplaceReg = getUniformOperandReplacementReg(MRI, RI, RFLSrcReg);
-        if (ReplaceReg != AMDGPU::NoRegister) {
-          MRI->replaceRegWith(RFLDstReg, ReplaceReg);
-        } else {
-          Item.RFLRegs.push_back(RFLDstReg);
-          // Insert function to expand to required size here
-          readFirstLaneReg(LoopBB, MRI, RI, TII, J, DL, RFLDstReg, RFLSrcReg,
-                           *RFLSrcOp);
-        }
+        Item.RFLRegs.push_back(RFLDstReg);
+        // Insert function to expand to required size here
+        readFirstLaneReg(LoopBB, MRI, RI, TII, J, DL, RFLDstReg, RFLSrcReg,
+                         *RFLSrcOp);
       }
     }
 
@@ -537,7 +617,7 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
 
     // Move the just read value into the destination using OR
     // TODO: In theory a mov would do here - but this is tricky to get to work
-    // correctly as it seems to confuse the regsiter allocator and other passes
+    // correctly as it seems to confuse the register allocator and other passes
     for (auto EndReg : Item.EndRegs) {
       MachineBasicBlock::iterator EndInsert(Item.Final);
       orReg(LoopBB, MRI, RI, TII, EndInsert, DL, std::get<1>(EndReg),
