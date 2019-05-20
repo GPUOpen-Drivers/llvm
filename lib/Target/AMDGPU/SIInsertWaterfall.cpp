@@ -209,35 +209,39 @@ static unsigned getUniformOperandReplacementReg(MachineRegisterInfo *MRI,
 static unsigned compareIdx(MachineBasicBlock &MBB, MachineRegisterInfo *MRI,
                            const SIRegisterInfo *RI, const SIInstrInfo *TII,
                            MachineBasicBlock::iterator &I, const DebugLoc &DL,
-                           unsigned CurrentIdxReg, MachineOperand &IndexOp) {
+                           unsigned CurrentIdxReg, MachineOperand &IndexOp,
+                           bool IsWave32) {
   // Iterate over the index in dword chunks and'ing the result with the
   // CondReg
   unsigned IndexReg = IndexOp.getReg();
   auto IndexRC = MRI->getRegClass(IndexReg);
+  unsigned AndOpc =
+      IsWave32 ? AMDGPU::S_AND_B32 : AMDGPU::S_AND_B64;
+  const auto *BoolXExecRC = RI->getRegClass(AMDGPU::SReg_1_XEXECRegClassID);
 
   uint32_t RegSize = RI->getRegSizeInBits(*IndexRC) / 32;
   unsigned CondReg;
 
   if (RegSize == 1) {
-    CondReg = MRI->createVirtualRegister(&AMDGPU::SReg_64_XEXECRegClass);
+    CondReg = MRI->createVirtualRegister(BoolXExecRC);
     BuildMI(MBB, I, DL, TII->get(AMDGPU::V_CMP_EQ_U32_e64), CondReg)
         .addReg(CurrentIdxReg)
         .addReg(IndexReg, 0, IndexOp.getSubReg());
   } else {
-    unsigned TReg = MRI->createVirtualRegister(&AMDGPU::SReg_64_XEXECRegClass);
+    unsigned TReg = MRI->createVirtualRegister(BoolXExecRC);
     BuildMI(MBB, I, DL, TII->get(AMDGPU::V_CMP_EQ_U32_e64), TReg)
         .addReg(CurrentIdxReg, 0, AMDGPU::sub0)
         .addReg(IndexReg, 0, AMDGPU::sub0);
 
     for (unsigned i = 1; i < RegSize; ++i) {
       unsigned TReg2 =
-          MRI->createVirtualRegister(&AMDGPU::SReg_64_XEXECRegClass);
+          MRI->createVirtualRegister(BoolXExecRC);
       BuildMI(MBB, I, DL, TII->get(AMDGPU::V_CMP_EQ_U32_e64), TReg2)
           .addReg(CurrentIdxReg, 0, AMDGPU::sub0 + i)
           .addReg(IndexReg, 0, AMDGPU::sub0 + i);
       unsigned TReg3 =
-          MRI->createVirtualRegister(&AMDGPU::SReg_64_XEXECRegClass);
-      BuildMI(MBB, I, DL, TII->get(AMDGPU::S_AND_B64), TReg3)
+          MRI->createVirtualRegister(BoolXExecRC);
+      BuildMI(MBB, I, DL, TII->get(AndOpc), TReg3)
           .addReg(TReg)
           .addReg(TReg2);
       TReg = TReg3;
@@ -512,16 +516,26 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
       MRI->replaceRegWith(LUDst, LUSrc);
     }
 
+    // EXEC mask handling
+    unsigned Exec = ST->isWave32() ? AMDGPU::EXEC_LO : AMDGPU::EXEC;
+    unsigned SaveExecOpc =
+      ST->isWave32() ? AMDGPU::S_AND_SAVEEXEC_B32 : AMDGPU::S_AND_SAVEEXEC_B64;
+    unsigned XorTermOpc =
+      ST->isWave32() ? AMDGPU::S_XOR_B32_term : AMDGPU::S_XOR_B64_term;
+    unsigned MovOpc =
+      ST->isWave32() ? AMDGPU::S_MOV_B32 : AMDGPU::S_MOV_B64;
+    const auto *BoolXExecRC = RI->getRegClass(AMDGPU::SReg_1_XEXECRegClassID);
+
     unsigned SaveExec =
-        MRI->createVirtualRegister(&AMDGPU::SReg_64_XEXECRegClass);
+        MRI->createVirtualRegister(BoolXExecRC);
     unsigned TmpExec =
-        MRI->createVirtualRegister(&AMDGPU::SReg_64_XEXECRegClass);
+        MRI->createVirtualRegister(BoolXExecRC);
 
     BuildMI(*CurrMBB, I, DL, TII->get(TargetOpcode::IMPLICIT_DEF), TmpExec);
 
     // Save the EXEC mask
-    BuildMI(*CurrMBB, I, DL, TII->get(AMDGPU::S_MOV_B64), SaveExec)
-        .addReg(AMDGPU::EXEC);
+    BuildMI(*CurrMBB, I, DL, TII->get(MovOpc), SaveExec)
+        .addReg(Exec);
 
     MachineBasicBlock &LoopBB = *MF.CreateMachineBasicBlock();
     MachineBasicBlock &RemainderBB = *MF.CreateMachineBasicBlock();
@@ -563,9 +577,9 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
     MachineBasicBlock::iterator J = LoopBB.begin();
 
     unsigned PhiExec =
-        MRI->createVirtualRegister(&AMDGPU::SReg_64_XEXECRegClass);
+        MRI->createVirtualRegister(BoolXExecRC);
     unsigned NewExec =
-        MRI->createVirtualRegister(&AMDGPU::SReg_64_XEXECRegClass);
+        MRI->createVirtualRegister(BoolXExecRC);
     unsigned CurrentIdxReg = MRI->createVirtualRegister(IndexSRC);
 
     for (auto EndReg : Item.EndRegs) {
@@ -607,10 +621,10 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
 
     // Compare the just read idx value to all possible idx values
     unsigned CondReg =
-        compareIdx(LoopBB, MRI, RI, TII, J, DL, CurrentIdxReg, *Index);
+      compareIdx(LoopBB, MRI, RI, TII, J, DL, CurrentIdxReg, *Index, ST->isWave32());
 
     // Update EXEC, save the original EXEC value to VCC
-    BuildMI(LoopBB, J, DL, TII->get(AMDGPU::S_AND_SAVEEXEC_B64), NewExec)
+    BuildMI(LoopBB, J, DL, TII->get(SaveExecOpc), NewExec)
         .addReg(CondReg, RegState::Kill);
 
     // TODO: Conditional branch here to loop header as potential optimization?
@@ -627,8 +641,8 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
     MRI->setSimpleHint(NewExec, CondReg);
 
     // Update EXEC, switch all done bits to 0 and all todo bits to 1.
-    BuildMI(LoopBB, E, DL, TII->get(AMDGPU::S_XOR_B64), AMDGPU::EXEC)
-        .addReg(AMDGPU::EXEC)
+    BuildMI(LoopBB, E, DL, TII->get(XorTermOpc), Exec)
+        .addReg(Exec)
         .addReg(NewExec);
 
     // XXX - s_xor_b64 sets scc to 1 if the result is nonzero, so can we use
@@ -638,7 +652,7 @@ bool SIInsertWaterfall::processWaterfall(MachineBasicBlock &MBB) {
     BuildMI(LoopBB, E, DL, TII->get(AMDGPU::S_CBRANCH_EXECNZ)).addMBB(&LoopBB);
 
     MachineBasicBlock::iterator First = RemainderBB.begin();
-    BuildMI(RemainderBB, First, DL, TII->get(AMDGPU::S_MOV_B64), AMDGPU::EXEC)
+    BuildMI(RemainderBB, First, DL, TII->get(MovOpc), Exec)
         .addReg(SaveExec);
 
     Item.Begin->eraseFromParent();
