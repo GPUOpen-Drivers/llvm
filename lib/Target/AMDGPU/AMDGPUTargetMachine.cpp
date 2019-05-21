@@ -888,8 +888,8 @@ void GCNPassConfig::addPreRegAlloc() {
   if (EnableScratchBoundsChecking) {
     addPass(createSIInsertScratchBoundsPass());
   }
-  addPass(createSIInsertWaterfallPass());
   addPass(createSIWholeQuadModePass());
+  addPass(createSIInsertWaterfallPass());
 }
 
 void GCNPassConfig::addFastRegAlloc() {

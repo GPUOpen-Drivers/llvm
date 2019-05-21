@@ -31,15 +31,14 @@ define amdgpu_ps void @test_waterfall_readlane(i32 addrspace(1)* inreg %out, <2 
 }
 
 ; GCN-LABEL: {{^}}test_waterfall_non_uniform_img:
-; GCN: v_mov_b32_e32 [[IDX:v[0-9]+]], v0
 ; GCN: v_mov_b32_e32 v[[DSTSTART:[0-9]+]], 0
 ; GCN: v_mov_b32_e32 v{{[0-9]+}}, 0
 ; GCN: v_mov_b32_e32 v{{[0-9]+}}, 0
 ; GCN: v_mov_b32_e32 v[[DSTEND:[0-9]+]], 0
 ; GCN: s_mov_b64 [[EXEC:s[[0-9]+:[0-9]+]]], exec
 ; GCN: {{^}}BB1_1:
-; GCN: v_readfirstlane_b32 s[[FIRSTVAL:[0-9]+]], [[IDX]]
-; GCN: v_cmp_eq_u32_e64 [[EXEC2:s[[0-9]+:[0-9]+]]], s[[FIRSTVAL]], [[IDX]]
+; GCN: v_readfirstlane_b32 s[[FIRSTVAL:[0-9]+]], v0
+; GCN: v_cmp_eq_u32_e64 [[EXEC2:s[[0-9]+:[0-9]+]]], s[[FIRSTVAL]], v0
 ; GCN: s_and_saveexec_b64 [[EXEC3:s[[0-9]+:[0-9]+]]], [[EXEC2]]
 ; GCN: s_load_dwordx8 [[PTR:s\[[0-9]+:[0-9]+\]]], s{{\[}}[[FIRSTVAL]]:{{[0-9]+}}], 0x0
 ; GCN: s_waitcnt lgkmcnt(0)
@@ -50,7 +49,6 @@ define amdgpu_ps void @test_waterfall_readlane(i32 addrspace(1)* inreg %out, <2 
 ; GCN: v_or_b32_e32 v[[DSTEND]], v[[DSTEND]], v[[VALEND]]
 ; GCN: s_xor_b64 exec, exec, [[EXEC3]]
 ; GCN: s_cbranch_execnz BB1_1
-; GCN: s_and_b64 exec, exec, s[{{[0-9]+:[0-9]+}}]
 ; GCN: s_mov_b64 exec, [[EXEC]]
 define amdgpu_ps <4 x float> @test_waterfall_non_uniform_img(<8 x i32> addrspace(4)* inreg %in, i32 %index, float %s,
                                                              <4 x i32> inreg %samp) #1 {
@@ -93,7 +91,6 @@ define amdgpu_ps <4 x float> @test_waterfall_non_uniform_img(<8 x i32> addrspace
 ; GCN: v_or_b32_e32 v[[DSTEND]], v[[DSTEND]], v[[VALEND]]
 ; GCN: s_xor_b64 exec, exec, [[EXEC3]]
 ; GCN: s_cbranch_execnz BB2_1
-; GCN: s_and_b64 exec, exec, s[{{[0-9]+:[0-9]+}}]
 ; GCN: s_mov_b64 exec, [[EXEC]]
 define amdgpu_ps <4 x float> @test_waterfall_non_uniform_img_single_read(<8 x i32> addrspace(4)* inreg %in, i32 %index, float %s,
                                                              <4 x i32> inreg %samp) #1 {
@@ -175,7 +172,6 @@ define amdgpu_ps void @test_multiple_groups(i32 addrspace(1)* inreg %out1, i32 a
 ; GCN: v_or_b32_e32 v[[DSTEND]], v[[DSTEND]], v[[VALEND]]
 ; GCN: s_xor_b64 exec, exec, [[EXEC3]]
 ; GCN: s_cbranch_execnz BB4_1
-; GCN: s_and_b64 exec, exec, s[{{[0-9]+:[0-9]+}}]
 ; GCN: s_mov_b64 exec, [[EXEC]]
 define amdgpu_ps <4 x float> @test_waterfall_non_uniform_img_multi_rl(<8 x i32> addrspace(4)* inreg %in,
                                                                       <4 x i32> addrspace(4)* inreg %samp_in,
@@ -216,7 +212,6 @@ define amdgpu_ps <4 x float> @test_waterfall_non_uniform_img_multi_rl(<8 x i32> 
 ; GCN: v_or_b32_e32 v[[DSTEND]], v[[DSTEND]], v[[VALEND]]
 ; GCN: s_xor_b64 exec, exec, [[EXEC4]]
 ; GCN: s_cbranch_execnz BB5_1
-; GCN: s_and_b64 exec, exec, s[{{[0-9]+:[0-9]+}}]
 ; GCN: s_mov_b64 exec, [[EXEC]]
 define amdgpu_ps <4 x float> @test_waterfall_non_uni_img_2_idx(<8 x i32> addrspace(4)* inreg %in,
                                                                <4 x i32> addrspace(4)* inreg %samp_in,
