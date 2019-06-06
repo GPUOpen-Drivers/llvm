@@ -82,6 +82,22 @@ def MIMGLZMappingTable : GenericTable {
   let PrimaryKeyName = "getMIMGLZMappingInfo";
 }
 
+class MIMGMIPMapping<MIMGBaseOpcode mip, MIMGBaseOpcode nonmip> {
+  MIMGBaseOpcode MIP = mip;
+  MIMGBaseOpcode NONMIP = nonmip;
+}
+
+def MIMGMIPMappingTable : GenericTable {
+  let FilterClass = "MIMGMIPMapping";
+  let CppTypeName = "MIMGMIPMappingInfo";
+  let Fields = ["MIP", "NONMIP"];
+  GenericEnum TypeOf_MIP = MIMGBaseOpcode;
+  GenericEnum TypeOf_NONMIP = MIMGBaseOpcode;
+
+  let PrimaryKey = ["MIP"];
+  let PrimaryKeyName = "getMIMGMIPMappingInfo";
+}
+
 class mimg <bits<7> si, bits<7> vi = si> {
   field bits<7> SI = si;
   field bits<7> VI = vi;
@@ -579,3 +595,7 @@ def : MIMGLZMapping<IMAGE_GATHER4_L, IMAGE_GATHER4_LZ>;
 def : MIMGLZMapping<IMAGE_GATHER4_C_L, IMAGE_GATHER4_C_LZ>;
 def : MIMGLZMapping<IMAGE_GATHER4_L_O, IMAGE_GATHER4_LZ_O>;
 def : MIMGLZMapping<IMAGE_GATHER4_C_L_O, IMAGE_GATHER4_C_LZ_O>;
+
+// MIP to NONMIP Optimization Mapping
+def : MIMGMIPMapping<IMAGE_LOAD_MIP, IMAGE_LOAD>;
+def : MIMGMIPMapping<IMAGE_STORE_MIP, IMAGE_STORE>;
