@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; XFAIL: *
 ; RUN: not llvm-as < %s -o /dev/null 2>&1 | FileCheck %s
 

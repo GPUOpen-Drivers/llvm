@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; RUN: llc -march=amdgcn -mcpu=gfx902 -verify-machineinstrs -amdgpu-enable-global-sgpr-addr -stop-after=si-form-memory-clauses < %s | FileCheck -check-prefix=GCN %s
 
 ; GCN-LABEL: {{^}}name:{{[ 	]*}}vector_clause
