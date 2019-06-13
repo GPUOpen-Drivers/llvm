@@ -361,7 +361,7 @@ bool SIInsertScratchBounds::runOnMachineFunction(MachineFunction &MF) {
 
       BuildMI(*PreludeBB, PreludeI, UnknownDL,
               TII->get(AMDGPU::S_MOV_B32), SizeReg)
-        .addExternalSymbol(SIScratchSizeSymbol);
+        .addImm(ScratchSizeEstimate);
 
       Changed = true;
     }
