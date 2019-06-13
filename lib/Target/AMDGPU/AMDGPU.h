@@ -53,7 +53,6 @@ FunctionPass *createSIOptimizeExecMaskingPreRAPass();
 FunctionPass *createSIFixSGPRCopiesPass();
 FunctionPass *createSIBufMemMergePass();
 FunctionPass *createSIMemoryLegalizerPass();
-FunctionPass *createSIInsertScratchBoundsPass();
 FunctionPass *createSIInsertWaitcntsPass();
 FunctionPass *createSIInsertWaterfallPass();
 FunctionPass *createSIPreAllocateWWMRegsPass();
@@ -150,9 +149,6 @@ extern char &SIWholeQuadModeID;
 
 void initializeSILowerControlFlowPass(PassRegistry &);
 extern char &SILowerControlFlowID;
-
-void initializeSIInsertScratchBoundsPass(PassRegistry &);
-extern char &SIInsertScratchBoundsID;
 
 void initializeSIInsertSkipsPass(PassRegistry &);
 extern char &SIInsertSkipsPassID;
