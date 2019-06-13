@@ -301,6 +301,7 @@ protected:
   // Used as options.
   bool EnableLoadStoreOpt;
   bool EnableUnsafeDSOffsetFolding;
+  bool EnableScratchBoundsChecks;
   bool EnableSIScheduler;
   bool EnableDS128;
   bool EnablePRTStrictNull;
@@ -860,6 +861,10 @@ public:
   }
 
   bool hasMadF16() const;
+
+  bool enableScratchBoundsChecks() const {
+    return EnableScratchBoundsChecks;
+  }
 
   bool enableSIScheduler() const {
     return EnableSIScheduler;
