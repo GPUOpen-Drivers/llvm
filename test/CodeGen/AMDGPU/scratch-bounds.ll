@@ -1,7 +1,7 @@
 ; RUN: llc -amdgpu-scratch-bounds-checking=true -verify-machineinstrs -march=amdgcn -mcpu=gfx900 -mattr=+max-private-element-size-16 < %s | FileCheck -enable-var-scope -check-prefix=GCN %s
 
 ; GCN-LABEL: {{^}}bounds_check_load_i32:
-; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8004
+; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8000
 ; GCN: v_cmp_gt_u32_e64 [[BOUNDSMASK:s\[[0-9]+:[0-9]+\]]], [[BOUNDS]], [[OFFSET:v[0-9]+]]
 ; GCN: s_and_saveexec_b64 [[EXECMASK:s\[[0-9]+:[0-9]+\]]], [[BOUNDSMASK]]
 ; GCN: buffer_load_dword [[LOADVALUE:v[0-9]+]], [[OFFSET]], s[{{[0-9]+}}:{{[0-9]+}}], s{{[0-9]+}} offen{{$}}
@@ -20,7 +20,7 @@ entry:
 }
 
 ; GCN-LABEL: {{^}}bounds_check_store_i32:
-; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8004
+; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8000
 ; GCN: v_cmp_gt_u32_e64 [[BOUNDSMASK:s\[[0-9]+:[0-9]+\]]], [[BOUNDS]], [[OFFSET:v[0-9]+]]
 ; GCN: s_and_saveexec_b64 [[EXECMASK:s\[[0-9]+:[0-9]+\]]], [[BOUNDSMASK]]
 ; GCN: buffer_store_dword v{{[0-9]+}}, [[OFFSET]], s[{{[0-9]+}}:{{[0-9]+}}], s{{[0-9]+}} offen{{$}}
@@ -38,7 +38,7 @@ entry:
 }
 
 ; GCN-LABEL: {{^}}bounds_check_load_i64:
-; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8008
+; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8000
 ; GCN: s_and_saveexec_b64 [[EXECMASK:s\[[0-9]+:[0-9]+\]]], [[BOUNDSMASK:s\[[0-9]+:[0-9]+\]]]
 ; GCN: buffer_load_dwordx2 v{{\[}}[[LOADLO:[0-9]+]]:[[LOADHI:[0-9]+]]{{\]}}, [[OFFSET:v[0-9]+]], s[{{[0-9]+}}:{{[0-9]+}}], s{{[0-9]+}} offen{{$}}
 ; GCN: s_mov_b64 exec, [[EXECMASK]]
@@ -57,7 +57,7 @@ entry:
 }
 
 ; GCN-LABEL: {{^}}bounds_check_store_i64:
-; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8008
+; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8000
 ; GCN: s_and_saveexec_b64 [[EXECMASK:s\[[0-9]+:[0-9]+\]]], [[BOUNDSMASK:s\[[0-9]+:[0-9]+\]]]
 ; GCN: buffer_store_dwordx2 v[{{[0-9]+}}:{{[0-9]+}}], [[OFFSET:v[0-9]+]], s[{{[0-9]+}}:{{[0-9]+}}], s{{[0-9]+}} offen{{$}}
 ; GCN: s_mov_b64 exec, [[EXECMASK]]
@@ -74,7 +74,7 @@ entry:
 }
 
 ; GCN-LABEL: {{^}}bounds_check_load_i128:
-; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8008
+; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8000
 ; GCN: s_and_saveexec_b64 [[EXECMASK:s\[[0-9]+:[0-9]+\]]], [[BOUNDSMASK:s\[[0-9]+:[0-9]+\]]]
 ; GCN: buffer_load_dwordx4 v{{\[}}[[LOADLO:[0-9]+]]:[[LOADHI:[0-9]+]]{{\]}}, [[OFFSET:v[0-9]+]], s[{{[0-9]+}}:{{[0-9]+}}], s{{[0-9]+}} offen{{$}}
 ; GCN: s_mov_b64 exec, [[EXECMASK]]
@@ -93,7 +93,7 @@ entry:
 }
 
 ; GCN-LABEL: {{^}}bounds_check_store_i128:
-; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8008
+; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8000
 ; GCN: s_and_saveexec_b64 [[EXECMASK:s\[[0-9]+:[0-9]+\]]], [[BOUNDSMASK:s\[[0-9]+:[0-9]+\]]]
 ; GCN: buffer_store_dwordx4 v[{{[0-9]+}}:{{[0-9]+}}], [[OFFSET:v[0-9]+]], s[{{[0-9]+}}:{{[0-9]+}}], s{{[0-9]+}} offen{{$}}
 ; GCN: s_mov_b64 exec, [[EXECMASK]]
@@ -185,7 +185,7 @@ entry:
 }
 
 ; GCN-LABEL: {{^}}bounds_check_load_offset_i32:
-; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8004
+; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8000
 ; GCN: v_add_u32_e32 [[CMPOFFSET:v[0-9]+]], 16, [[OFFSET:v[0-9]+]]
 ; GCN: v_cmp_gt_u32_e64 [[BOUNDSMASK:s\[[0-9]+:[0-9]+\]]], [[BOUNDS]], [[CMPOFFSET]]
 ; GCN: s_and_saveexec_b64 [[EXECMASK:s\[[0-9]+:[0-9]+\]]], [[BOUNDSMASK]]
@@ -206,7 +206,7 @@ entry:
 }
 
 ; GCN-LABEL: {{^}}bounds_check_store_offset_i32:
-; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8004
+; GCN: s_mov_b32 [[BOUNDS:s[0-9]+]], 0x8000
 ; GCN: v_add_u32_e32 [[CMPOFFSET:v[0-9]+]], 16, [[OFFSET:v[0-9]+]]
 ; GCN: v_cmp_gt_u32_e64 [[BOUNDSMASK:s\[[0-9]+:[0-9]+\]]], [[BOUNDS]], [[CMPOFFSET]]
 ; GCN: s_and_saveexec_b64 [[EXECMASK:s\[[0-9]+:[0-9]+\]]], [[BOUNDSMASK]]
