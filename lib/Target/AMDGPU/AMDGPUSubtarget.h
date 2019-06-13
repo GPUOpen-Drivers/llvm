@@ -299,6 +299,7 @@ protected:
   bool EnableHugePrivateBuffer;
   bool EnableLoadStoreOpt;
   bool EnableUnsafeDSOffsetFolding;
+  bool EnableScratchBoundsChecks;
   bool EnableSIScheduler;
   bool EnableDS128;
   bool EnablePRTStrictNull;
@@ -778,6 +779,10 @@ public:
 
   bool hasR128A16() const {
     return HasR128A16;
+  }
+
+  bool enableScratchBoundsChecks() const {
+    return EnableScratchBoundsChecks;
   }
 
   bool enableSIScheduler() const {
