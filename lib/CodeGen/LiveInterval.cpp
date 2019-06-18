@@ -916,8 +916,6 @@ static void stripValuesNotDefiningMask(unsigned Reg, LiveInterval::SubRange &SR,
   }
   for (VNInfo *VNI : ToBeRemoved)
     SR.removeValNo(VNI);
-
-  assert(!SR.empty() && "At least one value should be defined by this mask");
 }
 
 void LiveInterval::refineSubRanges(
