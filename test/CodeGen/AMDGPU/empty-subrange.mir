@@ -1,0 +1,43 @@
+# RUN: llc -mtriple=amdgcn -mcpu=gfx802 -verify-machineinstrs -start-after amdgpu-isel -o - %s | FileCheck -check-prefix=GCN %s
+#
+# This test would assert with "At least one value should be defined by this mask".
+#
+# GCN-LABEL: _amdgpu_ps_main:
+# GCN: s_endpgm
+
+---
+name:            _amdgpu_ps_main
+tracksRegLiveness: true
+liveins:         []
+body:             |
+  bb.0:
+    %1:sreg_32 = S_MOV_B32 0
+    %2:sreg_32 = S_MOV_B32 1036831949
+    %4:vgpr_32 = IMPLICIT_DEF
+    %5:vgpr_32 = IMPLICIT_DEF
+    %3:sreg_128 = REG_SEQUENCE %2, %subreg.sub0, %2, %subreg.sub1, %1, %subreg.sub2, %4, %subreg.sub3
+    %6:sreg_32_xm0 = S_MOV_B32 0
+    %7:sreg_256 = REG_SEQUENCE %6, %subreg.sub0, %6, %subreg.sub1, %6, %subreg.sub2, %6, %subreg.sub3, %6, %subreg.sub4, %6, %subreg.sub5, %6, %subreg.sub6, %6, %subreg.sub7
+    %9:vreg_128 = COPY %3
+    %10:sreg_128 = IMPLICIT_DEF
+    %8:vgpr_32 = IMAGE_SAMPLE_C_CL_V1_V4 killed %9, %7, %10, 1, 0, 0, 0, 0, 0, 0, -1, 0, implicit $exec :: (dereferenceable load 4 from stack)
+    %12:vgpr_32 = IMPLICIT_DEF
+    %13:vgpr_32 = IMPLICIT_DEF
+    %14:vgpr_32 = IMPLICIT_DEF
+    %15:vgpr_32 = IMPLICIT_DEF
+    %16:vgpr_32 = IMPLICIT_DEF
+    %17:vgpr_32 = IMPLICIT_DEF
+    %18:vgpr_32 = IMPLICIT_DEF
+    %19:vgpr_32 = IMPLICIT_DEF
+    %11:sreg_256 = REG_SEQUENCE %2, %subreg.sub0, %2, %subreg.sub1, %2, %subreg.sub2, %1, %subreg.sub3, %12, %subreg.sub4, %14, %subreg.sub5, %16, %subreg.sub6, %18, %subreg.sub7
+    %21:vreg_256 = COPY %11
+    %22:sreg_128 = IMPLICIT_DEF
+    %20:vgpr_32 = IMAGE_SAMPLE_C_CL_V1_V8 killed %21, %7, %22, 1, 0, 0, 0, 0, 0, 0, -1, 0, implicit $exec :: (dereferenceable load 4 from stack)
+    %23:vgpr_32 = nnan nsz arcp contract reassoc V_ADD_F32_e64 0, killed %8, 0, killed %20, 0, 0, implicit $exec
+    %24:vgpr_32 = V_MOV_B32_e32 1065353216, implicit $exec
+    %25:vgpr_32 = COPY %1
+    %26:vgpr_32 = COPY %1
+    EXP_DONE 0, killed %23, %25, %26, killed %24, -1, 0, 15, implicit $exec
+    S_ENDPGM 0
+
+...
