@@ -369,6 +369,7 @@ protected:
   bool HasVcmpxExecWARHazard;
   bool HasLdsBranchVmemWARHazard;
   bool HasNSAtoVMEMBug;
+  bool HasOffset3fBug;
   bool HasFlatSegmentOffsetBug;
 
   // Dummy feature to use for assembler in tablegen.
@@ -854,6 +855,10 @@ public:
 
   bool hasR128A16() const {
     return HasR128A16;
+  }
+
+  bool hasOffset3fBug() const {
+    return HasOffset3fBug;
   }
 
   bool hasNSAEncoding() const {

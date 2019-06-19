@@ -930,6 +930,31 @@ class SOPPe <bits<7> op> : Enc32 {
   let Inst{31-23} = 0x17f; // encoding
 }
 
+class SOPPe64 <bits<7> op> : Enc64 {
+  bits <16> simm16;
+
+  let Inst{15-0} = simm16;
+  let Inst{22-16} = op;
+  let Inst{31-23} = 0x17f; // encoding
+  let Inst{47-32} = 0x0000;
+  let Inst{54-48} = 0x00;
+  let Inst{63-55} = 0x17f; //encoding
+}
+
+class SOPP64 <bits<7> op, dag ins, string asm, list<dag> pattern = []> :
+  InstSI <(outs), ins, asm, pattern >, SOPPe64 <op> {
+
+  let mayLoad = 0;
+  let mayStore = 0;
+  let hasSideEffects = 0;
+  let SALU = 1;
+  let SOPP = 1;
+  let Size = 8;
+  let SchedRW = [WriteSALU];
+
+  let UseNamedOperandTable = 1;
+}
+
 class SOPP <bits<7> op, dag ins, string asm, list<dag> pattern = []> :
   InstSI <(outs), ins, asm, pattern >, SOPPe <op> {
 
@@ -943,7 +968,6 @@ class SOPP <bits<7> op, dag ins, string asm, list<dag> pattern = []> :
 
   let UseNamedOperandTable = 1;
 }
-
 
 def S_NOP : SOPP <0x00000000, (ins i16imm:$simm16), "s_nop $simm16">;
 
@@ -981,6 +1005,11 @@ def S_BRANCH : SOPP <
   [(br bb:$simm16)]> {
   let isBarrier = 1;
 }
+def S_BRANCH_64 :SOPP64 <
+  0x0000002, (ins sopp_brtarget:$simm16), "s_branch $simm16",
+  [(br bb:$simm16)]> {
+  let isBarrier = 1;
+}
 
 let Uses = [SCC] in {
 def S_CBRANCH_SCC0 : SOPP <
@@ -988,6 +1017,14 @@ def S_CBRANCH_SCC0 : SOPP <
   "s_cbranch_scc0 $simm16"
 >;
 def S_CBRANCH_SCC1 : SOPP <
+  0x00000005, (ins sopp_brtarget:$simm16),
+  "s_cbranch_scc1 $simm16"
+>;
+def S_CBRANCH_SCC0_64 : SOPP64 <
+  0x00000004, (ins sopp_brtarget:$simm16),
+  "s_cbranch_scc0 $simm16"
+>;
+def S_CBRANCH_SCC1_64 : SOPP64 <
   0x00000005, (ins sopp_brtarget:$simm16),
   "s_cbranch_scc1 $simm16"
 >;
@@ -1002,6 +1039,14 @@ def S_CBRANCH_VCCNZ : SOPP <
   0x00000007, (ins sopp_brtarget:$simm16),
   "s_cbranch_vccnz $simm16"
 >;
+def S_CBRANCH_VCCZ_64 : SOPP64 <
+  0x00000006, (ins sopp_brtarget:$simm16),
+  "s_cbranch_vccz $simm16"
+>;
+def S_CBRANCH_VCCNZ_64 : SOPP64 <
+  0x00000007, (ins sopp_brtarget:$simm16),
+  "s_cbranch_vccnz $simm16"
+>;
 } // End Uses = [VCC]
 
 let Uses = [EXEC] in {
@@ -1013,9 +1058,21 @@ def S_CBRANCH_EXECNZ : SOPP <
   0x00000009, (ins sopp_brtarget:$simm16),
   "s_cbranch_execnz $simm16"
 >;
+def S_CBRANCH_EXECZ_64 : SOPP64 <
+  0x00000008, (ins sopp_brtarget:$simm16),
+  "s_cbranch_execz $simm16"
+>;
+def S_CBRANCH_EXECNZ_64 : SOPP64 <
+  0x00000009, (ins sopp_brtarget:$simm16),
+  "s_cbranch_execnz $simm16"
+>;
 } // End Uses = [EXEC]
 
 def S_CBRANCH_CDBGSYS : SOPP <
+  0x00000017, (ins sopp_brtarget:$simm16),
+  "s_cbranch_cdbgsys $simm16"
+>;
+def S_CBRANCH_CDBGSYS_64 : SOPP64 <
   0x00000017, (ins sopp_brtarget:$simm16),
   "s_cbranch_cdbgsys $simm16"
 >;
@@ -1024,13 +1081,25 @@ def S_CBRANCH_CDBGSYS_AND_USER : SOPP <
   0x0000001A, (ins sopp_brtarget:$simm16),
   "s_cbranch_cdbgsys_and_user $simm16"
 >;
+def S_CBRANCH_CDBGSYS_AND_USER_64 : SOPP64 <
+  0x0000001A, (ins sopp_brtarget:$simm16),
+  "s_cbranch_cdbgsys_and_user $simm16"
+>;
 
 def S_CBRANCH_CDBGSYS_OR_USER : SOPP <
   0x00000019, (ins sopp_brtarget:$simm16),
   "s_cbranch_cdbgsys_or_user $simm16"
 >;
+def S_CBRANCH_CDBGSYS_OR_USER_64 : SOPP64 <
+  0x00000019, (ins sopp_brtarget:$simm16),
+  "s_cbranch_cdbgsys_or_user $simm16"
+>;
 
 def S_CBRANCH_CDBGUSER : SOPP <
+  0x00000018, (ins sopp_brtarget:$simm16),
+  "s_cbranch_cdbguser $simm16"
+>;
+def S_CBRANCH_CDBGUSER_64 : SOPP64 <
   0x00000018, (ins sopp_brtarget:$simm16),
   "s_cbranch_cdbguser $simm16"
 >;

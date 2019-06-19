@@ -37,17 +37,13 @@ public:
                   const MCSubtargetInfo *STI) const override;
   bool fixupNeedsRelaxation(const MCFixup &Fixup, uint64_t Value,
                             const MCRelaxableFragment *DF,
-                            const MCAsmLayout &Layout) const override {
-    return false;
-  }
+                            const MCAsmLayout &Layout) const override;
+
   void relaxInstruction(const MCInst &Inst, const MCSubtargetInfo &STI,
-                        MCInst &Res) const override {
-    llvm_unreachable("Not implemented");
-  }
+                        MCInst &Res) const override;
+
   bool mayNeedRelaxation(const MCInst &Inst,
-                         const MCSubtargetInfo &STI) const override {
-    return false;
-  }
+                         const MCSubtargetInfo &STI) const override;
 
   unsigned getMinimumNopSize() const override;
   bool writeNopData(raw_ostream &OS, uint64_t Count) const override;
@@ -56,6 +52,81 @@ public:
 };
 
 } //End anonymous namespace
+
+static unsigned getRelaxedOpcode(const MCInst &Inst) {
+  unsigned Op = Inst.getOpcode();
+  switch (Op) {
+  default:
+    return Op;
+  case AMDGPU::S_BRANCH:
+    return AMDGPU::S_BRANCH_64;
+  case AMDGPU::S_CBRANCH_SCC0:
+    return AMDGPU::S_CBRANCH_SCC0_64;
+  case AMDGPU::S_CBRANCH_SCC1:
+    return AMDGPU::S_CBRANCH_SCC1_64;
+  case AMDGPU::S_CBRANCH_VCCZ:
+    return AMDGPU::S_CBRANCH_VCCZ_64;
+  case AMDGPU::S_CBRANCH_VCCNZ:
+    return AMDGPU::S_CBRANCH_VCCNZ_64;
+  case AMDGPU::S_CBRANCH_EXECZ:
+    return AMDGPU::S_CBRANCH_EXECZ_64;
+  case AMDGPU::S_CBRANCH_EXECNZ:
+    return AMDGPU::S_CBRANCH_EXECNZ_64;
+  case AMDGPU::S_CBRANCH_CDBGSYS:
+    return AMDGPU::S_CBRANCH_CDBGSYS_64;
+  case AMDGPU::S_CBRANCH_CDBGSYS_AND_USER:
+    return AMDGPU::S_CBRANCH_CDBGSYS_AND_USER_64;
+  case AMDGPU::S_CBRANCH_CDBGSYS_OR_USER:
+    return AMDGPU::S_CBRANCH_CDBGSYS_OR_USER_64;
+  case AMDGPU::S_CBRANCH_CDBGUSER:
+    return AMDGPU::S_CBRANCH_CDBGUSER_64;
+  } // end of switch
+}
+
+void AMDGPUAsmBackend::relaxInstruction(const MCInst &Inst,
+                                        const MCSubtargetInfo &STI,
+                                        MCInst &Res) const {
+  unsigned RelaxedOpcode = getRelaxedOpcode(Inst);
+  Res.setOpcode(RelaxedOpcode);
+  Res.addOperand(Inst.getOperand(0));
+  return;
+}
+
+bool AMDGPUAsmBackend::fixupNeedsRelaxation(const MCFixup &Fixup,
+                                            uint64_t Value,
+                                            const MCRelaxableFragment *DF,
+                                            const MCAsmLayout &Layout) const {
+  // if the branch target has an offset of x3f this needs to be relaxed to
+  // add a s_nop 0 immediately after branch to effectively increment offset
+  // for hardware workaround in gfx1010
+  if (((int64_t(Value)/4)-1) == 0x3f)
+    return true;
+  else
+    return false;
+}
+
+bool AMDGPUAsmBackend::mayNeedRelaxation(const MCInst &Inst,
+                       const MCSubtargetInfo &STI) const {
+  if (!STI.getFeatureBits()[AMDGPU::FeatureOffset3fBug])
+    return false;
+
+  switch (Inst.getOpcode()) {
+  case AMDGPU::S_BRANCH:
+  case AMDGPU::S_CBRANCH_SCC0:
+  case AMDGPU::S_CBRANCH_SCC1:
+  case AMDGPU::S_CBRANCH_VCCZ:
+  case AMDGPU::S_CBRANCH_VCCNZ:
+  case AMDGPU::S_CBRANCH_EXECZ:
+  case AMDGPU::S_CBRANCH_EXECNZ:
+  case AMDGPU::S_CBRANCH_CDBGSYS:
+  case AMDGPU::S_CBRANCH_CDBGSYS_AND_USER:
+  case AMDGPU::S_CBRANCH_CDBGSYS_OR_USER:
+  case AMDGPU::S_CBRANCH_CDBGUSER:
+    return true;
+  } // end of switch
+
+  return false;
+}
 
 static unsigned getFixupKindNumBytes(unsigned Kind) {
   switch (Kind) {
