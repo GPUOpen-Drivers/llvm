@@ -961,7 +961,11 @@ void AMDGPUAsmPrinter::getSIProgramInfo(SIProgramInfo &ProgInfo,
       ScratchAlignShift;
 
   if (getIsaVersion(getGlobalSTI()->getCPU()).Major >= 10) {
-    ProgInfo.WgpMode = STM.isCuModeEnabled() ? 0 : 1;
+    // Leave WgpMode as default (0) for PAL - PAL will set this bit and should
+    // not be overridden here
+    ProgInfo.WgpMode = (STM.isCuModeEnabled() ||
+                        TM.getTargetTriple().getOS() == Triple::AMDPAL)
+                           ? 0 : 1;
     ProgInfo.MemOrdered = 1;
   }
 
