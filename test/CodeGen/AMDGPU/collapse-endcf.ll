@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; RUN: llc -march=amdgcn -mcpu=tahiti -verify-machineinstrs < %s | FileCheck -enable-var-scope -check-prefixes=GCN,ALL %s
 ; RUN: llc -march=amdgcn -mcpu=tahiti -verify-machineinstrs -amdgpu-opt-exec-mask-pre-ra=0 < %s | FileCheck -enable-var-scope -check-prefixes=DISABLED,ALL %s
 

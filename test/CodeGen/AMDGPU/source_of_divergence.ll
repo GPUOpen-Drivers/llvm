@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; RUN: llc -march=amdgcn -mcpu=gfx900 <%s | FileCheck -check-prefix=GCN %s
 
 ; Ensure that all the raw and struct atomic intrinsics are a source of divergence.
