@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; RUN: llc < %s -march=amdgcn -mcpu=verde -verify-machineinstrs -mattr=dumpcode -filetype=obj | FileCheck --check-prefix=SI --check-prefix=FUNC %s
 ; RUN: llc < %s -march=amdgcn -mcpu=tonga -verify-machineinstrs -mattr=dumpcode -filetype=obj | FileCheck --check-prefix=SI --check-prefix=FUNC %s
 

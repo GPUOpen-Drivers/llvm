@@ -1,3 +1,5 @@
+// Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+// Notified per clause 4(b) of the license.
 # RUN: llvm-mc -arch=amdgcn -mcpu=tonga -disassemble -show-encoding < %s | FileCheck %s
 
 # CHECK: v_nop              ; encoding: [0x00,0x00,0x00,0x7e]

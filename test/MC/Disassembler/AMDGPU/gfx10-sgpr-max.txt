@@ -1,3 +1,5 @@
+// Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+// Notified per clause 4(b) of the license.
 # RUN: llvm-mc -arch=amdgcn -mcpu=gfx1010 -disassemble -show-encoding < %s | FileCheck -check-prefix=GFX10 %s
 
 # GFX10: v_mov_b32_e32 v0, s105 ; encoding: [0x69,0x02,0x00,0x7e]

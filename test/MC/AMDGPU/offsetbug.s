@@ -1,3 +1,5 @@
+// Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+// Notified per clause 4(b) of the license.
 // RUN: llvm-mc -arch=amdgcn -mcpu=gfx1010 -show-encoding %s | FileCheck %s --check-prefix=GFX10
 // RUN: llvm-mc -arch=amdgcn -mcpu=gfx1010 -filetype=obj %s | llvm-objdump -disassemble -mcpu=gfx1010 - | FileCheck %s --check-prefix=BIN
 	s_getpc_b64 s[0:1]

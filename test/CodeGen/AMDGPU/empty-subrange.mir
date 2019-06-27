@@ -1,3 +1,5 @@
+# Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+# Notified per clause 4(b) of the license.
 # RUN: llc -mtriple=amdgcn -mcpu=gfx802 -verify-machineinstrs -start-after amdgpu-isel -o - %s | FileCheck -check-prefix=GCN %s
 #
 # This test would assert with "At least one value should be defined by this mask".

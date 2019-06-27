@@ -1,3 +1,5 @@
+// Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+// Notified per clause 4(b) of the license.
 # RUN: llvm-mc -arch=amdgcn -mcpu=gfx1010 -mattr=+wavefrontsize32,-wavefrontsize64 -disassemble -show-encoding < %s | FileCheck -check-prefix=GFX1032 %s
 # RUN: llvm-mc -arch=amdgcn -mcpu=gfx1010 -mattr=+wavefrontsize64,-wavefrontsize32 -disassemble -show-encoding < %s | FileCheck -check-prefix=GFX1064 %s
 
