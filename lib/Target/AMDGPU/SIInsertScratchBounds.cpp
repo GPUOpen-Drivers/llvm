@@ -220,19 +220,24 @@ bool SIInsertScratchBounds::insertBoundsCheck(MachineFunction &MF,
 
   if (RI->isVGPR(*MRI, AddrReg)) {
     const unsigned CondReg
-      = MRI->createVirtualRegister(&AMDGPU::SReg_64_XEXECRegClass);
+      = MRI->createVirtualRegister(RI->getWaveMaskRegClass());
     const unsigned ExecReg
-      = MRI->createVirtualRegister(&AMDGPU::SReg_64_XEXECRegClass);
+      = MRI->createVirtualRegister(RI->getWaveMaskRegClass());
 
     BuildMI(*PreAccessBB, PreI, DL,
-            TII->get(AMDGPU::V_CMP_LT_U32_e64), CondReg)
+            TII->get(AMDGPU::V_CMP_LT_U32_e64),
+            CondReg)
       .addReg(AddrReg, getKillRegState(KillAddr))
       .addReg(SizeReg);
     BuildMI(*PreAccessBB, PreI, DL,
-            TII->get(AMDGPU::S_AND_SAVEEXEC_B64), ExecReg)
+            TII->get(ST->isWave32() ?
+                     AMDGPU::S_AND_SAVEEXEC_B32 :
+                     AMDGPU::S_AND_SAVEEXEC_B64),
+            ExecReg)
       .addReg(CondReg, getKillRegState(!IsLoad));
     BuildMI(*ScratchAccessBB, ScratchI, DL,
-            TII->get(AMDGPU::S_MOV_B64), AMDGPU::EXEC)
+            TII->get(ST->isWave32() ? AMDGPU::S_MOV_B32 : AMDGPU::S_MOV_B64),
+            ST->isWave32() ? AMDGPU::EXEC_LO : AMDGPU::EXEC)
       .addReg(ExecReg, RegState::Kill);
 
     if (IsLoad) {
