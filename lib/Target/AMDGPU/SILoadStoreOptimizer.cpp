@@ -498,7 +498,7 @@ InstClassEnum SILoadStoreOptimizer::getInstClass(unsigned Opc) {
       /* Ignore instructions encoded without vaddr */
       if (AMDGPU::getNamedOperandIdx(Opc, AMDGPU::OpName::vaddr) == -1)
         return UNKNOWN;
-      if (TII->get(Opc).mayStore() || TII->isGather4(Opc))
+      if (!TII->get(Opc).mayLoad() || TII->isGather4(Opc))
         return UNKNOWN;
       return MIMG;
     }
