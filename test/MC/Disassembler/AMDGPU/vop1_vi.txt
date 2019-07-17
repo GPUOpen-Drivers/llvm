@@ -1,3 +1,5 @@
+// Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+// Notified per clause 4(b) of the license.
 # RUN: llvm-mc -arch=amdgcn -mcpu=tonga -disassemble -show-encoding < %s | FileCheck %s -check-prefix=VI
 
 # VI: v_mov_b32_e32 v1, v2 ; encoding: [0x02,0x03,0x02,0x7e]

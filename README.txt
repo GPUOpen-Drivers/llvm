@@ -15,3 +15,6 @@ documentation setup.
 
 If you are writing a package for LLVM, see docs/Packaging.rst for our
 suggestions.
+
+Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+Notified per clause 4(b) of the license.

@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; XFAIL: *
 ; RUN: not opt -verify < %s 2>&1 | FileCheck %s
 
