@@ -97,6 +97,12 @@ bool AMDGPUAtomicOptimizer::runOnFunction(Function &F) {
   HasDPP = ST.hasDPP();
   IsPixelShader = F.getCallingConv() == CallingConv::AMDGPU_PS;
 
+  // FIXME: Pass does not support wave32
+  // FIXME: Pass does not generate GFX10 appropriate DPP
+  if (ST.getGeneration() >= AMDGPUSubtarget::GFX10) {
+    return false;
+  }
+
   visit(F);
 
   const bool Changed = !ToReplace.empty();
