@@ -3480,6 +3480,7 @@ unsigned SIInstrInfo::getVALUOp(const MachineInstr &MI) const {
   case AMDGPU::PHI: return AMDGPU::PHI;
   case AMDGPU::INSERT_SUBREG: return AMDGPU::INSERT_SUBREG;
   case AMDGPU::WQM: return AMDGPU::WQM;
+  case AMDGPU::SOFT_WQM: return AMDGPU::SOFT_WQM;
   case AMDGPU::WWM: return AMDGPU::WWM;
   case AMDGPU::S_MOV_B32:
     return MI.getOperand(1).isReg() ?
@@ -5445,6 +5446,7 @@ void SIInstrInfo::addUsersToMoveToVALUWorklist(
     switch (UseMI.getOpcode()) {
     case AMDGPU::COPY:
     case AMDGPU::WQM:
+    case AMDGPU::SOFT_WQM:
     case AMDGPU::WWM:
     case AMDGPU::REG_SEQUENCE:
     case AMDGPU::PHI:
@@ -5562,6 +5564,7 @@ const TargetRegisterClass *SIInstrInfo::getDestEquivalentVGPRClass(
   case AMDGPU::REG_SEQUENCE:
   case AMDGPU::INSERT_SUBREG:
   case AMDGPU::WQM:
+  case AMDGPU::SOFT_WQM:
   case AMDGPU::WWM:
     if (RI.hasVGPRs(NewDstRC))
       return nullptr;
