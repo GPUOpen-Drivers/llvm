@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; RUN: llc -march=amdgcn -mcpu=tahiti -filetype=obj < %s | llvm-readobj -r --symbols | FileCheck %s -check-prefix=GCN
 ; RUN: llc -march=amdgcn -mcpu=tonga -filetype=obj < %s | llvm-readobj -r --symbols | FileCheck %s -check-prefix=GCN
 ; RUN: llc -march=r600 -mcpu=cypress -filetype=obj < %s | llvm-readobj -r --symbols | FileCheck %s -check-prefix=EG

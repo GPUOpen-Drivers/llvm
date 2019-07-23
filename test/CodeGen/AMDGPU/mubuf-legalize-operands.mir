@@ -1,3 +1,5 @@
+# Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+# Notified per clause 4(b) of the license.
 # RUN: llc -march=amdgcn -mcpu=gfx700 -verify-machineinstrs -verify-machine-dom-info --run-pass=si-fix-sgpr-copies -o - %s | FileCheck %s --check-prefixes=W64,ADDR64
 # RUN: llc -march=amdgcn -mcpu=gfx900 -verify-machineinstrs -verify-machine-dom-info --run-pass=si-fix-sgpr-copies -o - %s | FileCheck %s --check-prefixes=W64,W64-NO-ADDR64
 # RUN: llc -march=amdgcn -mcpu=gfx1010 -mattr=-wavefrontsize32,+wavefrontsize64 -verify-machineinstrs -verify-machine-dom-info --run-pass=si-fix-sgpr-copies -o - %s | FileCheck %s --check-prefixes=W64,W64-NO-ADDR64
