@@ -147,11 +147,11 @@ void AMDGPUAtomicOptimizer::visitAtomicRMWInst(AtomicRMWInst &I) {
 
   // If the pointer operand is divergent, then each lane is doing an atomic
   // operation on a different address, and we cannot optimize that.
-  if (DA->isDivergent(I.getOperand(PtrIdx))) {
+  if (DA->isDivergentUse(&I.getOperandUse(PtrIdx))) {
     return;
   }
 
-  const bool ValDivergent = DA->isDivergent(I.getOperand(ValIdx));
+  const bool ValDivergent = DA->isDivergentUse(&I.getOperandUse(ValIdx));
 
   // If the value operand is divergent, each lane is contributing a different
   // value to the atomic calculation. We can only optimize divergent values if
@@ -209,7 +209,7 @@ void AMDGPUAtomicOptimizer::visitIntrinsicInst(IntrinsicInst &I) {
 
   const unsigned ValIdx = 0;
 
-  const bool ValDivergent = DA->isDivergent(I.getOperand(ValIdx));
+  const bool ValDivergent = DA->isDivergentUse(&I.getOperandUse(ValIdx));
 
   // If the value operand is divergent, each lane is contributing a different
   // value to the atomic calculation. We can only optimize divergent values if
@@ -222,7 +222,7 @@ void AMDGPUAtomicOptimizer::visitIntrinsicInst(IntrinsicInst &I) {
   // If any of the other arguments to the intrinsic are divergent, we can't
   // optimize the operation.
   for (unsigned Idx = 1; Idx < I.getNumOperands(); Idx++) {
-    if (DA->isDivergent(I.getOperand(Idx))) {
+    if (DA->isDivergentUse(&I.getOperandUse(Idx))) {
       return;
     }
   }
