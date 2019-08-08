@@ -106,7 +106,7 @@ define amdgpu_kernel void @add_i32_varying_gfx1032(i32 addrspace(1)* %out) {
 ; GFX1032:         s_and_saveexec_b32 s4, vcc_lo
 ; GFX1032:         s_cbranch_execz BB3_2
 ; GFX1032:       BB3_1:
-; GFX1032:         v_mov_b32_e32 v0, 0
+; GFX1032:         v_mov_b32_e32 v0, local_var32@abs32@lo
 ; GFX1032:         v_mov_b32_e32 v5, s3
 ; GFX1032:         s_waitcnt vmcnt(0) lgkmcnt(0)
 ; GFX1032:         s_waitcnt_vscnt null, 0x0
@@ -119,7 +119,7 @@ define amdgpu_kernel void @add_i32_varying_gfx1032(i32 addrspace(1)* %out) {
 ; GFX1032:         v_readfirstlane_b32 s3, v0
 ; GFX1032:         v_mov_b32_e32 v0, v1
 ; GFX1032:         v_add_nc_u32_e32 v0, s3, v0
-; GFX1032:         s_mov_b32 s3, 0x31010000
+; GFX1032:         s_mov_b32 s3, 0x31016000
 ; GFX1032:         s_nop 1
 ; GFX1032:         s_waitcnt lgkmcnt(0)
 ; GFX1032:         buffer_store_dword v0, off, s[0:3], 0
@@ -181,7 +181,7 @@ define amdgpu_kernel void @add_i32_varying_gfx1064(i32 addrspace(1)* %out) {
 ; GFX1064:         s_and_saveexec_b64 s[4:5], vcc
 ; GFX1064:         s_cbranch_execz BB4_2
 ; GFX1064:       BB4_1:
-; GFX1064:         v_mov_b32_e32 v0, 0
+; GFX1064:         v_mov_b32_e32 v0, local_var32@abs32@lo
 ; GFX1064:         v_mov_b32_e32 v5, s3
 ; GFX1064:         s_waitcnt vmcnt(0) lgkmcnt(0)
 ; GFX1064:         s_waitcnt_vscnt null, 0x0
@@ -194,7 +194,7 @@ define amdgpu_kernel void @add_i32_varying_gfx1064(i32 addrspace(1)* %out) {
 ; GFX1064:         v_readfirstlane_b32 s3, v0
 ; GFX1064:         v_mov_b32_e32 v0, v1
 ; GFX1064:         v_add_nc_u32_e32 v0, s3, v0
-; GFX1064:         s_mov_b32 s3, 0x31010000
+; GFX1064:         s_mov_b32 s3, 0x31016000
 ; GFX1064:         s_nop 1
 ; GFX1064:         s_waitcnt lgkmcnt(0)
 ; GFX1064:         buffer_store_dword v0, off, s[0:3], 0
