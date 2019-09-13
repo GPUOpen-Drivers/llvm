@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; RUN: llc -mtriple=amdgcn--amdpal -verify-machineinstrs < %s | FileCheck -check-prefix=GCN -check-prefix=PAL %s
 ; RUN: llc -mtriple=amdgcn--amdhsa -mcpu=kaveri -verify-machineinstrs < %s | FileCheck -check-prefix=GCN -check-prefix=NOPAL %s
 

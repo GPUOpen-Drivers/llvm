@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; XUN: llc -mtriple=amdgcn-amd-amdhsa -verify-machineinstrs < %s | FileCheck -enable-var-scope -check-prefixes=GCN,SI %s
 ; RUN: llc -mtriple=amdgcn-amd-amdhsa -mcpu=tonga -mattr=+fp64-fp16-denormals,-flat-for-global -verify-machineinstrs < %s | FileCheck -enable-var-scope -check-prefixes=GCN,VI,SIVI,VI-DENORM %s
 ; RUN: llc -mtriple=amdgcn-amd-amdhsa -mcpu=tonga -mattr=-fp64-fp16-denormals,-flat-for-global -verify-machineinstrs < %s | FileCheck -enable-var-scope -check-prefixes=GCN,VI,SIVI,VI-FLUSH %s

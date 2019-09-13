@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; RUN: llc < %s -march=amdgcn -mcpu=gfx1010 -verify-machineinstrs | FileCheck %s
 
 ; CHECK: v_fma_f32 v0, v1, v0, s0
