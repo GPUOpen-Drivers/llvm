@@ -485,16 +485,6 @@ static bool tryToFoldACImm(const SIInstrInfo *TII,
   return true;
 }
 
-static bool canFoldTiedSrcOp(const MachineOperand &UseOp) {
-  unsigned UseOpc = UseOp.getParent()->getOpcode();
-  if (UseOpc == AMDGPU::V_MAC_F32_e64 ||
-      UseOpc == AMDGPU::V_MAC_F16_e64 ||
-      UseOpc == AMDGPU::V_FMAC_F32_e64 ||
-      UseOpc == AMDGPU::V_FMAC_F16_e64)
-    return true;
-  return false;
-}
-
 void SIFoldOperands::foldOperand(
   MachineOperand &OpToFold,
   MachineInstr *UseMI,
@@ -511,11 +501,17 @@ void SIFoldOperands::foldOperand(
     if (UseOp.isImplicit() || UseOp.getSubReg() != AMDGPU::NoSubRegister)
       return;
 
-    // Allow folding subregister extract into tied operands for
-    // v_mac and v_fmac opcodes only
+    // Don't fold subregister extracts into tied operands, only if it is a full
+    // copy since a subregister use tied to a full register def doesn't really
+    // make sense. e.g. don't fold:
+    //
+    // %1 = COPY %0:sub1
+    // %2<tied3> = V_MAC_{F16, F32} %3, %4, %1<tied0>
+    //
+    //  into
+    // %2<tied3> = V_MAC_{F16, F32} %3, %4, %0:sub1<tied0>
     if (UseOp.isTied() && OpToFold.getSubReg() != AMDGPU::NoSubRegister)
-      if (!canFoldTiedSrcOp(UseOp))
-        return;
+      return;
   }
 
   // Special case for REG_SEQUENCE: We can't fold literals into
