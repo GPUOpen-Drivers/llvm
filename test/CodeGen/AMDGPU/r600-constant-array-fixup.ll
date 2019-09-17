@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; RUN: llc -filetype=obj -march=r600 -mcpu=cypress -verify-machineinstrs < %s | llvm-readobj -r --symbols | FileCheck %s
 
 @arr = internal unnamed_addr addrspace(4) constant [4 x i32] [i32 4, i32 5, i32 6, i32 7], align 4
