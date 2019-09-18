@@ -410,7 +410,7 @@ char SIWholeQuadMode::scanInstructions(MachineFunction &MF,
         III.Disabled = StateWQM | StateWWM;
         continue;
       } else {
-        if (Opcode == AMDGPU::SI_PS_LIVE) {
+        if (Opcode == AMDGPU::SI_PS_LIVE || Opcode == AMDGPU::SI_WQM_HELPER) {
           LiveMaskQueries.push_back(&MI);
         } else if (Opcode == AMDGPU::SI_DEMOTE_I1) {
           DemoteInstrs.push_back(&MI);
@@ -1038,6 +1038,7 @@ void SIWholeQuadMode::lowerBlock(MachineBasicBlock &MBB) {
 
     switch (MI.getOpcode()) {
     case AMDGPU::SI_PS_LIVE:
+    case AMDGPU::SI_WQM_HELPER:
       lowerLiveMaskQuery(MBB, MI, LiveMaskReg, State == StateWQM);
       break;
     case AMDGPU::SI_DEMOTE_I1: {
