@@ -1,3 +1,5 @@
+; Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+; Notified per clause 4(b) of the license.
 ; RUN: llc -verify-machineinstrs -march=amdgcn -mcpu=gfx900 -mattr=+max-private-element-size-16,+enable-scratch-bounds-checks < %s | FileCheck -enable-var-scope -check-prefixes=GCN,GFX9 %s
 ; RUN: llc -verify-machineinstrs -march=amdgcn -mcpu=gfx1010 -mattr=+max-private-element-size-16,+enable-scratch-bounds-checks < %s | FileCheck -enable-var-scope -check-prefixes=GCN,GFX10 %s
 
