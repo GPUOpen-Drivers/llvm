@@ -3,6 +3,8 @@
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+// Notified per clause 4(b) of the license.
 //
 //===----------------------------------------------------------------------===//
 
@@ -251,7 +253,9 @@ multiclass VOP2eInstAliases<VOP2_Pseudo ps, VOP2_Real inst> {
 
 class VOP_MADAK <ValueType vt> : VOPProfile <[vt, vt, vt, vt]> {
   field Operand ImmOpType = !if(!eq(vt.Size, 32), f32kimm, f16kimm);
-  field dag Ins32 = (ins VCSrc_f32:$src0, VGPR_32:$src1, ImmOpType:$imm);
+  field dag Ins32 = !if(!eq(vt.Size, 32),
+                        (ins VCSrc_f32:$src0, VGPR_32:$src1, ImmOpType:$imm),
+                        (ins VCSrc_f16:$src0, VGPR_32:$src1, ImmOpType:$imm));
   field bit HasExt = 0;
 
   // Hack to stop printing _e64
