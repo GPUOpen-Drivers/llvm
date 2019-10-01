@@ -3,6 +3,8 @@
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
+// Notified per clause 4(b) of the license.
 //
 //===----------------------------------------------------------------------===//
 //
@@ -1529,8 +1531,10 @@ Value *LibCallSimplifier::optimizePow(CallInst *Pow, IRBuilder<> &B) {
   bool AllowApprox = Pow->hasApproxFunc();
   bool Ignored;
 
-  // Bail out if simplifying libcalls to pow() is disabled.
-  if (!hasFloatFn(TLI, Ty, LibFunc_pow, LibFunc_powf, LibFunc_powl))
+  // Bail out if simplifying libcalls to pow() is disabled, and the present call
+  // is pow() rather than llvm.pow.
+  if (!Callee->isIntrinsic() &&
+      !hasFloatFn(TLI, Ty, LibFunc_pow, LibFunc_powf, LibFunc_powl))
     return nullptr;
 
   // Propagate the math semantics from the call to any created instructions.
