@@ -3,8 +3,6 @@
 // Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
-// Modifications Copyright (c) 2019 Advanced Micro Devices, Inc. All rights reserved.
-// Notified per clause 4(b) of the license.
 //
 //===----------------------------------------------------------------------===//
 
@@ -657,7 +655,8 @@ defm V_FMAC_F32 : VOP2Inst <"v_fmac_f32", VOP_MAC_F32>;
 let Constraints = "$vdst = $src2",
       DisableEncoding="$src2",
       isConvertibleToThreeAddress = 1,
-      isCommutable = 1 in {
+      isCommutable = 1,
+      IsDOT = 1 in {
   let SubtargetPredicate = HasDot5Insts in
     defm V_DOT2C_F32_F16 : VOP2Inst_e32<"v_dot2c_f32_f16", VOP_DOT_ACC_F32_V2F16>;
   let SubtargetPredicate = HasDot6Insts in
@@ -778,6 +777,23 @@ class ZExt_i16_i1_Pat <SDNode ext> : GCNPat <
                      $src)
 >;
 
+foreach vt = [i16, v2i16] in {
+def : GCNPat <
+  (and vt:$src0, vt:$src1),
+  (V_AND_B32_e64 VSrc_b32:$src0, VSrc_b32:$src1)
+>;
+
+def : GCNPat <
+  (or vt:$src0, vt:$src1),
+  (V_OR_B32_e64 VSrc_b32:$src0, VSrc_b32:$src1)
+>;
+
+def : GCNPat <
+  (xor vt:$src0, vt:$src1),
+  (V_XOR_B32_e64 VSrc_b32:$src0, VSrc_b32:$src1)
+>;
+}
+
 let Predicates = [Has16BitInsts] in {
 
 let Predicates = [Has16BitInsts, isGFX7GFX8GFX9] in {
@@ -799,21 +815,6 @@ defm : Arithmetic_i16_Pats<smax, V_MAX_I16_e64,   1>;
 defm : Arithmetic_i16_Pats<umin, V_MIN_U16_e64,   1>;
 defm : Arithmetic_i16_Pats<umax, V_MAX_U16_e64,   1>;
 }
-
-def : GCNPat <
-  (and i16:$src0, i16:$src1),
-  (V_AND_B32_e64 VSrc_b32:$src0, VSrc_b32:$src1)
->;
-
-def : GCNPat <
-  (or i16:$src0, i16:$src1),
-  (V_OR_B32_e64 VSrc_b32:$src0, VSrc_b32:$src1)
->;
-
-def : GCNPat <
-  (xor i16:$src0, i16:$src1),
-  (V_XOR_B32_e64 VSrc_b32:$src0, VSrc_b32:$src1)
->;
 
 let Predicates = [Has16BitInsts, isGFX7GFX8GFX9] in {
 defm : Bits_OpsRev_i16_Pats<shl, V_LSHLREV_B16_e64>;
